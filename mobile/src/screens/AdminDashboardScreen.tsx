@@ -13,9 +13,18 @@ import {
   Modal,
   TextInput,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
+import * as DocumentPicker from 'expo-document-picker';
+import * as FileSystem from 'expo-file-system';
+import * as MediaLibrary from 'expo-media-library';
+import * as Sharing from 'expo-sharing';
 import { LinearGradient } from 'expo-linear-gradient';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Linking, Platform } from 'react-native';
+
+// API Base URL'i import et
+const API_BASE_URL = Platform.OS === 'android' ? 'http://192.168.1.128:3000' : 'http://localhost:3000';
 
 import Ionicons from 'react-native-vector-icons/Ionicons';
 
@@ -39,7 +48,22 @@ interface Personel {
   foto?: string;
 }
 
+interface OzlukBelge {
+  id: number;
+  personelId: number;
+  tur: string;
+  dosya: string;
+}
+
+interface DocumentFile {
+  uri: string;
+  name: string;
+  size: number;
+  mimeType: string;
+}
+
 export default function AdminDashboardScreen({ navigation }: AdminDashboardScreenProps) {
+  const insets = useSafeAreaInsets();
   const [stats, setStats] = useState<Stats>({ toplam: 0, rapor: '—', izin: 0 });
   const [loading, setLoading] = useState(false);
   const [activeSection, setActiveSection] = useState('dashboard');
@@ -78,12 +102,47 @@ export default function AdminDashboardScreen({ navigation }: AdminDashboardScree
     day: new Date().getDate()
   });
 
+  // Özlük Belgeleri States
+  const [selectedPersonelId, setSelectedPersonelId] = useState<number | null>(null);
+  const [selectedDocumentType, setSelectedDocumentType] = useState<string>('');
+  const [selectedDocument, setSelectedDocument] = useState<DocumentFile | null>(null);
+  const [ozlukBelgeleri, setOzlukBelgeleri] = useState<OzlukBelge[]>([]);
+  const [ozlukLoading, setOzlukLoading] = useState(false);
+  const [showPersonelPicker, setShowPersonelPicker] = useState(false);
+  const [showDocumentTypePicker, setShowDocumentTypePicker] = useState(false);
+
+  const documentTypes = [
+    'Diploma',
+    'Adli Sicil Kaydı',
+    'Vesikalık',
+    'Sağlık Raporu',
+    'İkametgah',
+    'Nüfus Cüzdanı Örneği',
+    'Askerlik Durumu'
+  ];
+
   useEffect(() => {
     loadStats();
     if (activeSection === 'personel') {
       loadPersoneller();
+    } else if (activeSection === 'ozluk') {
+      // Reset özlük states when entering özlük section
+      setSelectedPersonelId(null);
+      setSelectedDocumentType('');
+      setSelectedDocument(null);
+      setOzlukBelgeleri([]);
+      setShowPersonelPicker(false);
+      setShowDocumentTypePicker(false);
+      
+      loadPersoneller(); // Load personnel for selection
     }
   }, [activeSection]);
+
+  useEffect(() => {
+    if (selectedPersonelId && activeSection === 'ozluk') {
+      loadOzlukBelgeleri(selectedPersonelId);
+    }
+  }, [selectedPersonelId]);
 
   const loadStats = async () => {
     setLoading(true);
@@ -97,9 +156,9 @@ export default function AdminDashboardScreen({ navigation }: AdminDashboardScree
       const headers = { Authorization: `Bearer ${token}` };
       
       const [personelRes, izinRes, uretimRes] = await Promise.all([
-        fetch('http://10.0.2.2:3000/api/personel', { headers }),
-        fetch('http://10.0.2.2:3000/api/izin', { headers }),
-        fetch('http://10.0.2.2:3000/api/uretim/istatistik', { headers })
+        fetch(`${API_BASE_URL}/api/personel`, { headers }),
+        fetch(`${API_BASE_URL}/api/izin`, { headers }),
+        fetch(`${API_BASE_URL}/api/uretim/istatistik`, { headers })
       ]);
 
       const personelData = await personelRes.json();
@@ -126,7 +185,7 @@ export default function AdminDashboardScreen({ navigation }: AdminDashboardScree
         return;
       }
 
-      const response = await fetch('http://10.0.2.2:3000/api/personel', {
+      const response = await fetch(`${API_BASE_URL}/api/personel`, {
         headers: { Authorization: `Bearer ${token}` }
       });
 
@@ -407,7 +466,7 @@ export default function AdminDashboardScreen({ navigation }: AdminDashboardScree
         } as any);
       }
 
-      const response = await fetch('http://10.0.2.2:3000/api/personel/add', {
+      const response = await fetch(`${API_BASE_URL}/api/personel/add`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${token}` },
         body: formData
@@ -549,7 +608,7 @@ export default function AdminDashboardScreen({ navigation }: AdminDashboardScree
         } as any);
       }
 
-      const response = await fetch(`http://10.0.2.2:3000/api/personel/${editingPersonel.id}`, {
+      const response = await fetch(`${API_BASE_URL}/api/personel/${editingPersonel.id}`, {
         method: 'PUT',
         headers: { Authorization: `Bearer ${token}` },
         body: formData
@@ -585,7 +644,7 @@ export default function AdminDashboardScreen({ navigation }: AdminDashboardScree
                 return;
               }
 
-              const response = await fetch(`http://10.0.2.2:3000/api/personel/${id}`, {
+              const response = await fetch(`${API_BASE_URL}/api/personel/${id}`, {
                 method: 'DELETE',
                 headers: { Authorization: `Bearer ${token}` }
               });
@@ -605,6 +664,257 @@ export default function AdminDashboardScreen({ navigation }: AdminDashboardScree
       ]
     );
   };
+
+  // Özlük Belgeleri Functions
+  const loadOzlukBelgeleri = async (personelId: number) => {
+    setOzlukLoading(true);
+    try {
+      const token = await AsyncStorage.getItem('token');
+      if (!token) {
+        navigation.navigate('AdminLogin');
+        return;
+      }
+
+      const response = await fetch(`${API_BASE_URL}/api/ozluk/${personelId}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        setOzlukBelgeleri(data || []);
+      } else {
+        Alert.alert('Hata', 'Belgeler yüklenemedi.');
+      }
+    } catch (error) {
+      Alert.alert('Hata', 'Belgeler yüklenirken hata oluştu.');
+    } finally {
+      setOzlukLoading(false);
+    }
+  };
+
+  const pickDocument = async () => {
+    try {
+      const result = await DocumentPicker.getDocumentAsync({
+        type: ['application/pdf', 'image/*'],
+        copyToCacheDirectory: true,
+      });
+
+      if (!result.canceled && result.assets[0]) {
+        const asset = result.assets[0];
+        setSelectedDocument({
+          uri: asset.uri,
+          name: asset.name,
+          size: asset.size || 0,
+          mimeType: asset.mimeType || 'application/octet-stream'
+        });
+      }
+    } catch (error) {
+      Alert.alert('Hata', 'Dosya seçilirken hata oluştu.');
+    }
+  };
+
+  const uploadDocument = async () => {
+    if (!selectedPersonelId || !selectedDocumentType || !selectedDocument) {
+      Alert.alert('Hata', 'Tüm alanları doldurun.');
+      return;
+    }
+
+    try {
+      const token = await AsyncStorage.getItem('token');
+      if (!token) {
+        navigation.navigate('AdminLogin');
+        return;
+      }
+
+      const formData = new FormData();
+      formData.append('personelId', selectedPersonelId.toString());
+      formData.append('tur', selectedDocumentType);
+
+      // Read file as base64 and append
+      const fileInfo = await FileSystem.getInfoAsync(selectedDocument.uri);
+      if (fileInfo.exists) {
+        formData.append('dosya', {
+          uri: selectedDocument.uri,
+          type: selectedDocument.mimeType,
+          name: selectedDocument.name,
+        } as any);
+      }
+
+      const response = await fetch(`${API_BASE_URL}/api/ozluk`, {
+        method: 'POST',
+        headers: { 
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'multipart/form-data',
+        },
+        body: formData
+      });
+
+      if (response.ok) {
+        Alert.alert('Başarılı', 'Belge yüklendi.');
+        setSelectedDocument(null);
+        setSelectedDocumentType('');
+        loadOzlukBelgeleri(selectedPersonelId);
+      } else {
+        const errorText = await response.text();
+        Alert.alert('Hata', `Belge yüklenemedi: ${errorText}`);
+      }
+    } catch (error) {
+      Alert.alert('Hata', `Belge yüklenirken hata oluştu: ${error instanceof Error ? error.message : 'Bilinmeyen hata'}`);
+    }
+  };
+
+  const deleteOzlukBelge = (belgeId: number) => {
+    Alert.alert(
+      'Belge Sil',
+      'Bu belgeyi silmek istediğinize emin misiniz?',
+      [
+        { text: 'İptal', style: 'cancel' },
+        {
+          text: 'Sil',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              const token = await AsyncStorage.getItem('token');
+              if (!token) {
+                navigation.navigate('AdminLogin');
+                return;
+              }
+
+              const response = await fetch(`${API_BASE_URL}/api/ozluk/${belgeId}`, {
+                method: 'DELETE',
+                headers: { Authorization: `Bearer ${token}` }
+              });
+
+              if (response.ok) {
+                Alert.alert('Başarılı', 'Belge silindi.');
+                if (selectedPersonelId) {
+                  loadOzlukBelgeleri(selectedPersonelId);
+                }
+              } else {
+                Alert.alert('Hata', 'Belge silinemedi.');
+              }
+            } catch (error) {
+              Alert.alert('Hata', 'Silme işlemi sırasında hata oluştu.');
+            }
+          }
+        }
+      ]
+    );
+  };
+
+     const downloadOzlukBelge = async (dosyaAdi: string) => {
+     try {
+       const url = `${API_BASE_URL}/uploads/${dosyaAdi}`;
+       const fileExtension = dosyaAdi.split('.').pop()?.toLowerCase();
+       
+       if (['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(fileExtension || '')) {
+                  // For images: Open directly in browser without downloading
+                  try {
+                    await Linking.openURL(url);
+                  } catch (error) {
+                    console.error('Image open error:', error);
+                    Alert.alert('Hata', 'Resim açılamadı.');
+                  }
+                } else if (fileExtension === 'pdf') {
+                  // For PDF files: Give user options
+                  Alert.alert(
+                    'PDF Nasıl Açılsın?',
+                    'PDF dosyasını nasıl açmak istiyorsunuz?',
+                    [
+                      {
+                        text: 'İptal',
+                        style: 'cancel'
+                      },
+                      {
+                        text: 'Tarayıcıda Aç',
+                        onPress: async () => {
+                          try {
+                            await Linking.openURL(url);
+                          } catch (openError) {
+                            console.error('Browser open error:', openError);
+                            Alert.alert('Hata', 'Tarayıcıda açılamadı.');
+                          }
+                        }
+                      },
+                      {
+                        text: 'Uygulama Seç',
+                        onPress: async () => {
+                          try {
+                            // Download first, then let user choose app
+                            const fileUri = FileSystem.documentDirectory + dosyaAdi;
+                            const downloadResult = await FileSystem.downloadAsync(url, fileUri);
+                            
+                            if (downloadResult.status === 200) {
+                              const isAvailable = await Sharing.isAvailableAsync();
+                              if (isAvailable) {
+                                await Sharing.shareAsync(downloadResult.uri);
+                              } else {
+                                Alert.alert('Hata', 'Paylaşım özelliği kullanılamıyor.');
+                              }
+                            } else {
+                              Alert.alert('Hata', 'Dosya indirilemedi.');
+                            }
+                          } catch (shareError) {
+                            console.error('Share error:', shareError);
+                            Alert.alert('Hata', 'Dosya paylaşılamadı.');
+                          }
+                        }
+                      }
+                    ]
+                  );
+                } else {
+                  // For other files (DOC, XLS, etc.): Give user options
+                  Alert.alert(
+                    `${fileExtension?.toUpperCase()} Dosyası Nasıl Açılsın?`,
+                    'Dosyayı nasıl açmak istiyorsunuz?',
+                    [
+                      {
+                        text: 'İptal',
+                        style: 'cancel'
+                      },
+                      {
+                        text: 'Tarayıcıda Aç',
+                        onPress: async () => {
+                          try {
+                            await Linking.openURL(url);
+                          } catch (openError) {
+                            console.error('Browser open error:', openError);
+                            Alert.alert('Hata', 'Tarayıcıda açılamadı.');
+                          }
+                        }
+                      },
+                      {
+                        text: 'Uygulama Seç',
+                        onPress: async () => {
+                          try {
+                            // Download first, then let user choose app
+                            const fileUri = FileSystem.documentDirectory + dosyaAdi;
+                            const downloadResult = await FileSystem.downloadAsync(url, fileUri);
+                            
+                            if (downloadResult.status === 200) {
+                              const isAvailable = await Sharing.isAvailableAsync();
+                              if (isAvailable) {
+                                await Sharing.shareAsync(downloadResult.uri);
+                              } else {
+                                Alert.alert('Hata', 'Paylaşım özelliği kullanılamıyor.');
+                              }
+                            } else {
+                              Alert.alert('Hata', 'Dosya indirilemedi.');
+                            }
+                          } catch (shareError) {
+                            console.error('Share error:', shareError);
+                            Alert.alert('Hata', 'Dosya paylaşılamadı.');
+                          }
+                        }
+                      }
+                    ]
+                  );
+                                 }
+     } catch (error) {
+       console.error('Download/View error:', error);
+       Alert.alert('Hata', 'Dosya işlemi başarısız oldu.');
+     }
+   };
 
   const logout = async () => {
     Alert.alert(
@@ -658,12 +968,15 @@ export default function AdminDashboardScreen({ navigation }: AdminDashboardScree
 
   const renderPersoneller = () => (
     <View style={styles.section}>
+      {/* Fixed Header */}
       <View style={styles.sectionHeader}>
         <Text style={styles.sectionTitle}>👥 Personeller</Text>
         <TouchableOpacity style={styles.addPersonButton} onPress={openAddModal}>
           <Ionicons name="add" size={24} color="#fff" />
         </TouchableOpacity>
       </View>
+      
+      {/* Scrollable Content */}
       {personelList.length === 0 ? (
         <View style={styles.emptyContainer}>
           <Ionicons name="people-outline" size={60} color="#1761a0" />
@@ -673,66 +986,306 @@ export default function AdminDashboardScreen({ navigation }: AdminDashboardScree
           </Text>
         </View>
       ) : (
-        <ScrollView
-          style={styles.personelScrollContainer}
-          showsVerticalScrollIndicator={false}
-          refreshControl={
-            <RefreshControl
-              refreshing={loading}
-              onRefresh={() => {
-                loadStats();
-                loadPersoneller();
-              }}
-              colors={['#1761a0']}
-              tintColor="#1761a0"
-            />
-          }
-          bounces={true}
-          scrollEventThrottle={16}
-        >
-          {personelList.map((personel) => (
-            <View key={personel.id} style={styles.personelCard}>
-              <View style={styles.personelInfo}>
-                {personel.foto ? (
-                  <Image
-                    source={{ uri: `http://10.0.2.2:3000/uploads/${personel.foto}` }}
-                    style={styles.personelPhoto}
-                    defaultSource={require('../../assets/fotonik-logo.png')}
-                  />
-                ) : (
-                  <View style={styles.personelAvatar}>
-                    <Text style={styles.personelInitials}>
-                      {personel.ad.charAt(0).toUpperCase()}
-                    </Text>
+        <View style={styles.personelListContainer}>
+          <ScrollView
+            style={styles.personelScrollContainer}
+            showsVerticalScrollIndicator={true}
+            indicatorStyle="black"
+            scrollIndicatorInsets={{ right: 1 }}
+            refreshControl={
+              <RefreshControl
+                refreshing={loading}
+                onRefresh={() => {
+                  loadStats();
+                  loadPersoneller();
+                }}
+                colors={['#1761a0']}
+                tintColor="#1761a0"
+              />
+            }
+            bounces={true}
+            scrollEventThrottle={16}
+            nestedScrollEnabled={true}
+          >
+            {personelList.map((personel) => (
+              <View key={personel.id} style={styles.personelCard}>
+                <View style={styles.personelInfo}>
+                  {personel.foto ? (
+                    <Image
+                      source={{ uri: `${API_BASE_URL}/uploads/${personel.foto}` }}
+                      style={styles.personelPhoto}
+                      defaultSource={require('../../assets/fotonik-logo.png')}
+                    />
+                  ) : (
+                    <View style={styles.personelAvatar}>
+                      <Text style={styles.personelInitials}>
+                        {personel.ad.charAt(0).toUpperCase()}
+                      </Text>
+                    </View>
+                  )}
+                  <View style={styles.personelDetails}>
+                    <Text style={styles.personelName}>{personel.ad} {personel.soyad}</Text>
+                    <Text style={styles.personelField}>Eğitim: {personel.egitim}</Text>
+                    <Text style={styles.personelField}>Unvan: {personel.gorev}</Text>
+                    <Text style={styles.personelDate}>Başlama: {personel.baslama}</Text>
                   </View>
-                )}
-                <View style={styles.personelDetails}>
-                  <Text style={styles.personelName}>{personel.ad} {personel.soyad}</Text>
-                  <Text style={styles.personelField}>Eğitim: {personel.egitim}</Text>
-                  <Text style={styles.personelField}>Unvan: {personel.gorev}</Text>
-                  <Text style={styles.personelDate}>Başlama: {personel.baslama}</Text>
-                </View>
-                <View style={styles.personelActions}>
-                  <TouchableOpacity
-                    style={styles.editButton}
-                    onPress={() => editPersonel(personel)}
-                  >
-                    <Ionicons name="pencil" size={16} color="#fff" />
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={styles.deleteButton}
-                    onPress={() => deletePersonel(personel.id)}
-                  >
-                    <Ionicons name="trash" size={16} color="#fff" />
-                  </TouchableOpacity>
+                  <View style={styles.personelActions}>
+                    <TouchableOpacity
+                      style={styles.editButton}
+                      onPress={() => editPersonel(personel)}
+                    >
+                      <Ionicons name="pencil" size={16} color="#fff" />
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={styles.deleteButton}
+                      onPress={() => deletePersonel(personel.id)}
+                    >
+                      <Ionicons name="trash" size={16} color="#fff" />
+                    </TouchableOpacity>
+                  </View>
                 </View>
               </View>
-            </View>
-          ))}
-        </ScrollView>
+            ))}
+          </ScrollView>
+        </View>
       )}
     </View>
   );
+
+  const renderOzlukBelgeleri = () => {
+    const selectedPersonel = personelList.find(p => p.id === selectedPersonelId);
+    
+    return (
+      <View style={styles.section}>
+        {/* Fixed Header */}
+        <Text style={styles.sectionTitle}>📁 Özlük Belgeleri</Text>
+        
+        {/* Scrollable Content */}
+        <ScrollView 
+          style={styles.ozlukScrollContainer}
+          showsVerticalScrollIndicator={true}
+          indicatorStyle="black"
+          scrollIndicatorInsets={{ right: 1 }}
+        >
+        
+        {/* Personnel Selection */}
+        <View style={styles.card}>
+          <Text style={styles.inputLabel}>Personel Seç</Text>
+          <TouchableOpacity 
+            style={styles.dropdownButton}
+            onPress={() => setShowPersonelPicker(true)}
+          >
+            <Text style={styles.dropdownText}>
+              {selectedPersonel ? `${selectedPersonel.ad} ${selectedPersonel.soyad}` : 'Bir personel seçin'}
+            </Text>
+            <Ionicons name="chevron-down" size={20} color="#666" />
+          </TouchableOpacity>
+        </View>
+
+        {/* Upload Form - Only show when personnel is selected */}
+        {selectedPersonelId && (
+          <View style={styles.card}>
+            <Text style={styles.cardTitle}>Yeni Belge Yükle</Text>
+            
+            {/* Document Type Selection */}
+            <View style={styles.inputContainer}>
+              <Text style={styles.inputLabel}>Belge Türü</Text>
+              <TouchableOpacity 
+                style={styles.dropdownButton}
+                onPress={() => setShowDocumentTypePicker(true)}
+              >
+                <Text style={styles.dropdownText}>
+                  {selectedDocumentType || 'Belge türü seçin'}
+                </Text>
+                <Ionicons name="chevron-down" size={20} color="#666" />
+              </TouchableOpacity>
+            </View>
+
+            {/* File Selection */}
+            <View style={styles.inputContainer}>
+              <Text style={styles.inputLabel}>Dosya</Text>
+              <TouchableOpacity 
+                style={styles.filePickerButton}
+                onPress={pickDocument}
+              >
+                <Ionicons name="document-attach" size={20} color="#fff" />
+                <Text style={styles.filePickerText}>
+                  {selectedDocument ? selectedDocument.name : 'Dosya Seç'}
+                </Text>
+              </TouchableOpacity>
+              {selectedDocument && (
+                <Text style={styles.fileInfo}>
+                  Boyut: {Math.round(selectedDocument.size / 1024)} KB
+                </Text>
+              )}
+            </View>
+
+            {/* Upload Button */}
+            <TouchableOpacity 
+              style={[
+                styles.uploadButton, 
+                (!selectedDocumentType || !selectedDocument) && styles.uploadButtonDisabled
+              ]}
+              onPress={uploadDocument}
+              disabled={!selectedDocumentType || !selectedDocument}
+            >
+              <Text style={styles.uploadButtonText}>Yükle</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+
+        {/* Documents List */}
+        {selectedPersonelId && (
+          <View style={styles.card}>
+            <Text style={styles.cardTitle}>Yüklenen Belgeler</Text>
+            {ozlukLoading ? (
+              <View style={styles.loadingContainer}>
+                <Text style={styles.loadingText}>Belgeler yükleniyor...</Text>
+              </View>
+            ) : ozlukBelgeleri.length === 0 ? (
+              <View style={styles.emptyDocumentsContainer}>
+                <Ionicons name="folder-open-outline" size={40} color="#999" />
+                <Text style={styles.emptyDocumentsText}>Henüz belge yüklenmemiş</Text>
+              </View>
+            ) : (
+              <ScrollView 
+                style={styles.documentsScroll}
+                showsVerticalScrollIndicator={true}
+                indicatorStyle="black"
+                scrollIndicatorInsets={{ right: 1 }}
+              >
+                {ozlukBelgeleri.map((belge) => (
+                  <View key={belge.id} style={styles.documentItem}>
+                    <View style={styles.documentInfo}>
+                      <Ionicons name="document" size={24} color="#1761a0" />
+                      <Text style={styles.documentType}>{belge.tur}</Text>
+                    </View>
+                    <View style={styles.documentActions}>
+                      <TouchableOpacity 
+                        style={styles.downloadButton}
+                        onPress={() => downloadOzlukBelge(belge.dosya)}
+                      >
+                        <Ionicons name="download" size={16} color="#fff" />
+                      </TouchableOpacity>
+                      <TouchableOpacity 
+                        style={styles.deleteDocButton}
+                        onPress={() => deleteOzlukBelge(belge.id)}
+                      >
+                        <Ionicons name="trash" size={16} color="#fff" />
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                ))}
+              </ScrollView>
+            )}
+          </View>
+        )}
+
+        {/* Personnel Picker Modal */}
+        <Modal
+          visible={showPersonelPicker}
+          transparent={true}
+          animationType="slide"
+          onRequestClose={() => setShowPersonelPicker(false)}
+        >
+          <View style={styles.modalOverlay}>
+            <View style={styles.pickerModalContainer}>
+              <View style={styles.pickerHeader}>
+                <Text style={styles.pickerTitle}>Personel Seç</Text>
+                <TouchableOpacity onPress={() => setShowPersonelPicker(false)}>
+                  <Ionicons name="close" size={24} color="#666" />
+                </TouchableOpacity>
+              </View>
+              <ScrollView 
+                style={styles.pickerContent}
+                showsVerticalScrollIndicator={true}
+                indicatorStyle="black"
+                scrollIndicatorInsets={{ right: 1 }}
+              >
+                <TouchableOpacity 
+                  style={styles.pickerItem}
+                  onPress={() => {
+                    setSelectedPersonelId(null);
+                    setOzlukBelgeleri([]);
+                    setShowPersonelPicker(false);
+                  }}
+                >
+                  <Text style={styles.pickerItemText}>Personel seçimi temizle</Text>
+                </TouchableOpacity>
+                {personelList.map((personel) => (
+                  <TouchableOpacity 
+                    key={personel.id}
+                    style={[
+                      styles.pickerItem,
+                      selectedPersonelId === personel.id && styles.pickerItemSelected
+                    ]}
+                    onPress={() => {
+                      setSelectedPersonelId(personel.id);
+                      setShowPersonelPicker(false);
+                    }}
+                  >
+                    <Text style={[
+                      styles.pickerItemText,
+                      selectedPersonelId === personel.id && styles.pickerItemTextSelected
+                    ]}>
+                      {personel.ad} {personel.soyad}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+            </View>
+          </View>
+        </Modal>
+
+        {/* Document Type Picker Modal */}
+        <Modal
+          visible={showDocumentTypePicker}
+          transparent={true}
+          animationType="slide"
+          onRequestClose={() => setShowDocumentTypePicker(false)}
+        >
+          <View style={styles.modalOverlay}>
+            <View style={styles.pickerModalContainer}>
+              <View style={styles.pickerHeader}>
+                <Text style={styles.pickerTitle}>Belge Türü Seç</Text>
+                <TouchableOpacity onPress={() => setShowDocumentTypePicker(false)}>
+                  <Ionicons name="close" size={24} color="#666" />
+                </TouchableOpacity>
+              </View>
+              <ScrollView 
+                style={styles.pickerContent}
+                showsVerticalScrollIndicator={true}
+                indicatorStyle="black"
+                scrollIndicatorInsets={{ right: 1 }}
+              >
+                {documentTypes.map((type) => (
+                  <TouchableOpacity 
+                    key={type}
+                    style={[
+                      styles.pickerItem,
+                      selectedDocumentType === type && styles.pickerItemSelected
+                    ]}
+                    onPress={() => {
+                      setSelectedDocumentType(type);
+                      setShowDocumentTypePicker(false);
+                    }}
+                  >
+                    <Text style={[
+                      styles.pickerItemText,
+                      selectedDocumentType === type && styles.pickerItemTextSelected
+                    ]}>
+                      {type}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+            </View>
+          </View>
+        </Modal>
+        </ScrollView>
+      </View>
+    );
+  };
 
   const renderComingSoon = (title: string) => (
     <View style={styles.section}>
@@ -754,7 +1307,7 @@ export default function AdminDashboardScreen({ navigation }: AdminDashboardScree
       case 'personel':
         return renderPersoneller();
       case 'ozluk':
-        return renderComingSoon('📁 Özlük Belgeleri');
+        return renderOzlukBelgeleri();
       case 'izin':
         return renderComingSoon('📝 İzin Talepleri');
       case 'duyuru':
@@ -786,20 +1339,13 @@ export default function AdminDashboardScreen({ navigation }: AdminDashboardScree
 
 
         {/* Content */}
-        <ScrollView
-          style={styles.content}
-        >
+        <View style={styles.content}>
           {renderContent()}
-        </ScrollView>
+        </View>
 
         {/* Bottom Tab Navigation */}
-        <View style={styles.bottomTabContainer}>
-          <ScrollView 
-            horizontal 
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.bottomTabContent}
-            style={styles.bottomTabScroll}
-          >
+        <View style={[styles.bottomTabContainer, { paddingBottom: Math.max(insets.bottom, 5) + 8 }]}>
+          <View style={styles.bottomTabContent}>
             {menuItems.map((item) => (
               <TouchableOpacity
                 key={item.id}
@@ -808,12 +1354,12 @@ export default function AdminDashboardScreen({ navigation }: AdminDashboardScree
               >
                 <Ionicons 
                   name={item.icon as any} 
-                  size={26} 
+                  size={22} 
                   color={activeSection === item.id ? '#25b2ef' : '#8a9ba8'} 
                 />
               </TouchableOpacity>
             ))}
-          </ScrollView>
+          </View>
         </View>
 
         {/* Edit Modal */}
@@ -833,8 +1379,10 @@ export default function AdminDashboardScreen({ navigation }: AdminDashboardScree
               </View>
 
               <ScrollView 
-                style={styles.modalContent}
-                showsVerticalScrollIndicator={false}
+                style={styles.modalScrollContent}
+                showsVerticalScrollIndicator={true}
+                indicatorStyle="black"
+                scrollIndicatorInsets={{ right: 1 }}
                 nestedScrollEnabled={true}
               >
                 <View style={styles.inputContainer}>
@@ -893,7 +1441,7 @@ export default function AdminDashboardScreen({ navigation }: AdminDashboardScree
                   </TouchableOpacity>
                 </View>
 
-                <View style={styles.inputContainer}>
+                <View style={[styles.inputContainer, { marginBottom: 30 }]}>
                   <Text style={styles.inputLabel}>Fotoğraf</Text>
                   <View style={styles.photoRowContainer}>
                     <View style={styles.currentPhotoContainer}>
@@ -905,7 +1453,7 @@ export default function AdminDashboardScreen({ navigation }: AdminDashboardScree
                         <Image source={{ uri: selectedImage }} style={styles.editPhotoPreview} />
                       ) : editingPersonel?.foto ? (
                         <Image 
-                          source={{ uri: `http://10.0.2.2:3000/uploads/${editingPersonel.foto}` }} 
+                          source={{ uri: `${API_BASE_URL}/uploads/${editingPersonel.foto}` }} 
                           style={styles.editPhotoPreview}
                           defaultSource={require('../../assets/fotonik-logo.png')}
                         />
@@ -925,20 +1473,21 @@ export default function AdminDashboardScreen({ navigation }: AdminDashboardScree
                     
                     <TouchableOpacity style={styles.selectPhotoButtonRight} onPress={selectPhotoSource}>
                       <Ionicons name="camera" size={16} color="#fff" />
-                      <Text style={styles.selectPhotoText}>Fotoğraf Seç</Text>
+                      <Text style={styles.selectPhotoText}>Yükle</Text>
                     </TouchableOpacity>
                   </View>
                 </View>
-
-                <View style={styles.modalButtons}>
-                  <TouchableOpacity style={styles.cancelButton} onPress={closeEditModal}>
-                    <Text style={styles.cancelButtonText}>İptal</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity style={styles.saveButton} onPress={savePersonelEdit}>
-                    <Text style={styles.saveButtonText}>Kaydet</Text>
-                  </TouchableOpacity>
-                </View>
               </ScrollView>
+              
+              {/* Fixed Buttons */}
+              <View style={styles.modalButtons}>
+                <TouchableOpacity style={styles.cancelButton} onPress={closeEditModal}>
+                  <Text style={styles.cancelButtonText}>İptal</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.saveButton} onPress={savePersonelEdit}>
+                  <Text style={styles.saveButtonText}>Kaydet</Text>
+                </TouchableOpacity>
+              </View>
               
               {/* Custom Date Picker Modal */}
               <Modal
@@ -1020,8 +1569,10 @@ export default function AdminDashboardScreen({ navigation }: AdminDashboardScree
               </View>
 
               <ScrollView 
-                style={styles.modalContent}
-                showsVerticalScrollIndicator={false}
+                style={styles.modalScrollContent}
+                showsVerticalScrollIndicator={true}
+                indicatorStyle="black"
+                scrollIndicatorInsets={{ right: 1 }}
                 nestedScrollEnabled={true}
               >
                 <View style={styles.inputContainer}>
@@ -1078,7 +1629,7 @@ export default function AdminDashboardScreen({ navigation }: AdminDashboardScree
                   </TouchableOpacity>
                 </View>
 
-                <View style={styles.inputContainer}>
+                <View style={[styles.inputContainer, { marginBottom: 30 }]}>
                   <Text style={styles.inputLabel}>Fotoğraf</Text>
                   <View style={styles.photoRowContainer}>
                     <View style={styles.currentPhotoContainer}>
@@ -1097,16 +1648,17 @@ export default function AdminDashboardScreen({ navigation }: AdminDashboardScree
                     </TouchableOpacity>
                   </View>
                 </View>
-
-                <View style={styles.modalButtons}>
-                  <TouchableOpacity style={styles.cancelButton} onPress={closeAddModal}>
-                    <Text style={styles.cancelButtonText}>İptal</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity style={styles.saveButton} onPress={saveNewPersonel}>
-                    <Text style={styles.saveButtonText}>Kaydet</Text>
-                  </TouchableOpacity>
-                </View>
               </ScrollView>
+              
+              {/* Fixed Buttons */}
+              <View style={styles.modalButtons}>
+                <TouchableOpacity style={styles.cancelButton} onPress={closeAddModal}>
+                  <Text style={styles.cancelButtonText}>İptal</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.saveButton} onPress={saveNewPersonel}>
+                  <Text style={styles.saveButtonText}>Kaydet</Text>
+                </TouchableOpacity>
+              </View>
               
               {/* Add Person Date Picker Modal */}
               <Modal
@@ -1216,26 +1768,29 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.1,
     shadowRadius: 3.84,
     elevation: 5,
-    height: 60,
-  },
-  bottomTabScroll: {
-    flex: 1,
+    paddingTop: 6,
+    paddingLeft: 0,
+    paddingRight: 12,
   },
   bottomTabContent: {
     flexDirection: 'row',
-    paddingVertical: 8,
-    paddingHorizontal: 8,
     alignItems: 'center',
-    justifyContent: 'space-around',
-    minWidth: '100%',
+    justifyContent: 'space-between',
+    paddingVertical: 4,
+    paddingLeft: 6,
+    paddingRight: 0,
+    minHeight: 44,
   },
   bottomTabItem: {
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 8,
-    paddingHorizontal: 6,
+    paddingVertical: 6,
+    paddingHorizontal: 4,
     borderRadius: 8,
-    minWidth: 35,
+    minWidth: 38,
+    minHeight: 36,
+    flex: 1,
+    marginHorizontal: 1,
   },
   content: {
     flex: 1,
@@ -1243,7 +1798,10 @@ const styles = StyleSheet.create({
     marginBottom: 0,
   },
   section: {
-    padding: 20,
+    paddingHorizontal: 20,
+    paddingTop: 20,
+    paddingBottom: 10,
+    flex: 1,
   },
   sectionHeader: {
     flexDirection: 'row',
@@ -1360,9 +1918,16 @@ const styles = StyleSheet.create({
   personelContainer: {
     flex: 1,
   },
+  personelListContainer: {
+    height: 550, // Increased height for 5 cards
+    width: '100%',
+  },
   personelScrollContainer: {
-    maxHeight: 700,
+    height: '100%',
+  },
+  ozlukScrollContainer: {
     flex: 1,
+    paddingTop: 10,
   },
   personelCard: {
     backgroundColor: '#fff',
@@ -1451,8 +2016,8 @@ const styles = StyleSheet.create({
   modalContainer: {
     backgroundColor: '#fff',
     borderRadius: 12,
-    width: width * 0.9,
-    maxHeight: '90%',
+    width: width * 0.95,
+    height: '85%',
     shadowColor: '#000',
     shadowOffset: {
       width: 0,
@@ -1482,6 +2047,11 @@ const styles = StyleSheet.create({
     padding: 20,
     paddingBottom: 40,
   },
+  modalScrollContent: {
+    padding: 20,
+    paddingBottom: 30,
+    flex: 1,
+  },
   inputContainer: {
     marginBottom: 16,
   },
@@ -1502,8 +2072,12 @@ const styles = StyleSheet.create({
   modalButtons: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginTop: 20,
+    padding: 20,
+    paddingTop: 16,
     gap: 12,
+    borderTopWidth: 1,
+    borderTopColor: '#e0e0e0',
+    backgroundColor: '#fff',
   },
   cancelButton: {
     flex: 1,
@@ -1776,6 +2350,190 @@ const styles = StyleSheet.create({
   datePickerConfirmText: {
     color: '#fff',
     fontSize: 16,
+    fontWeight: '600',
+  },
+
+  // Özlük Belgeleri Styles
+  card: {
+    backgroundColor: '#fff',
+    padding: 16,
+    borderRadius: 12,
+    marginBottom: 16,
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.1,
+    shadowRadius: 3.84,
+    elevation: 5,
+  },
+  cardTitle: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#134b79',
+    marginBottom: 16,
+  },
+  dropdownButton: {
+    borderWidth: 1,
+    borderColor: '#d0d0d0',
+    borderRadius: 8,
+    padding: 12,
+    backgroundColor: '#f9f9f9',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    minHeight: 48,
+  },
+  dropdownText: {
+    fontSize: 16,
+    color: '#333',
+    flex: 1,
+  },
+  filePickerButton: {
+    backgroundColor: '#1761a0',
+    padding: 12,
+    borderRadius: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  filePickerText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  fileInfo: {
+    fontSize: 12,
+    color: '#666',
+    marginTop: 4,
+  },
+  uploadButton: {
+    backgroundColor: '#10b981',
+    padding: 14,
+    borderRadius: 8,
+    alignItems: 'center',
+    marginTop: 16,
+  },
+  uploadButtonDisabled: {
+    backgroundColor: '#9ca3af',
+  },
+  uploadButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  loadingContainer: {
+    padding: 20,
+    alignItems: 'center',
+  },
+  loadingText: {
+    color: '#666',
+    fontSize: 14,
+  },
+  emptyDocumentsContainer: {
+    padding: 30,
+    alignItems: 'center',
+  },
+  emptyDocumentsText: {
+    color: '#666',
+    fontSize: 14,
+    marginTop: 8,
+    textAlign: 'center',
+  },
+  documentsScroll: {
+    maxHeight: 300,
+  },
+  documentItem: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 12,
+    borderWidth: 1,
+    borderColor: '#e0e0e0',
+    borderRadius: 8,
+    marginBottom: 8,
+    backgroundColor: '#f9f9f9',
+  },
+  documentInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+    gap: 8,
+  },
+  documentType: {
+    fontSize: 14,
+    color: '#134b79',
+    fontWeight: '500',
+  },
+  documentActions: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  downloadButton: {
+    backgroundColor: '#3b82f6',
+    width: 32,
+    height: 32,
+    borderRadius: 6,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  deleteDocButton: {
+    backgroundColor: '#ef4444',
+    width: 32,
+    height: 32,
+    borderRadius: 6,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  pickerModalContainer: {
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    width: width * 0.85,
+    maxHeight: '70%',
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.25,
+    shadowRadius: 3.84,
+    elevation: 5,
+  },
+  pickerHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#e0e0e0',
+    backgroundColor: '#f8f9fa',
+    borderTopLeftRadius: 12,
+    borderTopRightRadius: 12,
+  },
+  pickerTitle: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#134b79',
+  },
+  pickerContent: {
+    maxHeight: 400,
+  },
+  pickerItem: {
+    padding: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f0f0f0',
+  },
+  pickerItemSelected: {
+    backgroundColor: '#eaf3fb',
+  },
+  pickerItemText: {
+    fontSize: 16,
+    color: '#333',
+  },
+  pickerItemTextSelected: {
+    color: '#1761a0',
     fontWeight: '600',
   },
 });
