@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -70,12 +70,18 @@ interface DocumentFile {
   mimeType: string;
 }
 
+const { width } = Dimensions.get('window');
+
 export default function AdminDashboardScreen({ navigation }: AdminDashboardScreenProps) {
   const insets = useSafeAreaInsets();
   const [stats, setStats] = useState<Stats>({ toplam: 0, rapor: '—', izin: 0 });
   const [loading, setLoading] = useState(false);
   const [activeSection, setActiveSection] = useState('dashboard');
   const [personelList, setPersonelList] = useState<Personel[]>([]);
+  
+  // Swipe navigation refs
+  const scrollViewRef = useRef<ScrollView>(null);
+  const [currentPageIndex, setCurrentPageIndex] = useState(0);
   
   // İletişim state'leri
   const [iletisimMesajlari, setIletisimMesajlari] = useState<IletisimMesaj[]>([]);
@@ -133,10 +139,25 @@ export default function AdminDashboardScreen({ navigation }: AdminDashboardScree
     'Askerlik Durumu'
   ];
 
+  // Track if this is the first load
+  const [isFirstLoad, setIsFirstLoad] = useState(true);
+
   useEffect(() => {
-    loadStats();
+    if (isFirstLoad) {
+      // First load - use regular loading with indicator
+      loadStats();
+      setIsFirstLoad(false);
+    } else {
+      // Section changes - use quiet loading without indicator
+      loadStatsQuiet();
+    }
+
     if (activeSection === 'personel') {
-      loadPersoneller();
+      if (isFirstLoad) {
+        loadPersoneller();
+      } else {
+        loadPersonellerQuiet();
+      }
     } else if (activeSection === 'ozluk') {
       // Reset özlük states when entering özlük section
       setSelectedPersonelId(null);
@@ -146,9 +167,20 @@ export default function AdminDashboardScreen({ navigation }: AdminDashboardScree
       setShowPersonelPicker(false);
       setShowDocumentTypePicker(false);
       
-      loadPersoneller(); // Load personnel for selection
+      if (isFirstLoad) {
+        loadPersoneller();
+      } else {
+        loadPersonellerQuiet();
+      }
     } else if (activeSection === 'iletisim') {
       loadIletisimMesajlari();
+    }
+    
+    // Update page index when activeSection changes via bottom navigation
+    const pageIndex = menuItems.findIndex(item => item.id === activeSection);
+    if (pageIndex !== -1 && pageIndex !== currentPageIndex) {
+      setCurrentPageIndex(pageIndex);
+      scrollToPage(pageIndex);
     }
   }, [activeSection]);
 
@@ -191,6 +223,38 @@ export default function AdminDashboardScreen({ navigation }: AdminDashboardScree
     }
   };
 
+  // Quiet version for section changes (no loading indicator)
+  const loadStatsQuiet = async () => {
+    try {
+      const token = await AsyncStorage.getItem('token');
+      if (!token) {
+        navigation.navigate('AdminLogin');
+        return;
+      }
+
+      const headers = { Authorization: `Bearer ${token}` };
+      
+      const [personelRes, izinRes, uretimRes] = await Promise.all([
+        fetch(`${API_BASE_URL}/api/personel`, { headers }),
+        fetch(`${API_BASE_URL}/api/izin`, { headers }),
+        fetch(`${API_BASE_URL}/api/uretim/istatistik`, { headers })
+      ]);
+
+      const personelData = await personelRes.json();
+      const izinData = await izinRes.json();
+      const uretimData = await uretimRes.json();
+
+      setStats({
+        toplam: personelData.length || 0,
+        rapor: uretimData?.ozet?.totalReports || '—',
+        izin: izinData.filter((i: any) => i.durum === 'Beklemede').length || 0
+      });
+    } catch (error) {
+      // Silent error handling for background loading
+      console.error('Stats loading error:', error);
+    }
+  };
+
   const loadPersoneller = async () => {
     try {
       const token = await AsyncStorage.getItem('token');
@@ -211,6 +275,29 @@ export default function AdminDashboardScreen({ navigation }: AdminDashboardScree
       }
     } catch (error) {
       Alert.alert('Hata', 'Personel listesi yüklenirken hata oluştu.');
+    }
+  };
+
+  // Quiet version for section changes (no loading indicator)
+  const loadPersonellerQuiet = async () => {
+    try {
+      const token = await AsyncStorage.getItem('token');
+      if (!token) {
+        navigation.navigate('AdminLogin');
+        return;
+      }
+
+      const response = await fetch(`${API_BASE_URL}/api/personel`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        setPersonelList(data || []);
+      }
+    } catch (error) {
+      // Silent error handling for background loading
+      console.error('Personnel loading error:', error);
     }
   };
 
@@ -1048,6 +1135,24 @@ export default function AdminDashboardScreen({ navigation }: AdminDashboardScree
     { id: 'iletisim', title: 'Gelen Mesajlar', icon: 'mail-outline' },
   ];
 
+  // Swipe navigation functions
+  const handleScroll = (event: any) => {
+    const contentOffsetX = event.nativeEvent.contentOffset.x;
+    const pageIndex = Math.round(contentOffsetX / width);
+    
+    if (pageIndex !== currentPageIndex && pageIndex >= 0 && pageIndex < menuItems.length) {
+      setCurrentPageIndex(pageIndex);
+      setActiveSection(menuItems[pageIndex].id);
+    }
+  };
+
+  const scrollToPage = (pageIndex: number) => {
+    scrollViewRef.current?.scrollTo({
+      x: pageIndex * width,
+      animated: true,
+    });
+  };
+
   const renderDashboard = () => (
     <View style={styles.section}>
       <Text style={styles.sectionTitle}>Hoş Geldiniz</Text>
@@ -1554,10 +1659,49 @@ export default function AdminDashboardScreen({ navigation }: AdminDashboardScree
 
 
 
-        {/* Content */}
-        <View style={styles.content}>
-          {renderContent()}
-        </View>
+        {/* Swipeable Content */}
+        <ScrollView
+          ref={scrollViewRef}
+          horizontal
+          pagingEnabled
+          showsHorizontalScrollIndicator={false}
+          onMomentumScrollEnd={handleScroll}
+          style={styles.swipeContainer}
+        >
+          {menuItems.map((item, index) => (
+            <View key={item.id} style={[styles.pageContainer, { width }]}>
+              <ScrollView
+                style={styles.content}
+                refreshControl={
+                  <RefreshControl refreshing={loading} onRefresh={loadStats} />
+                }
+              >
+                {(() => {
+                  switch (item.id) {
+                    case 'dashboard':
+                      return renderDashboard();
+                    case 'personel':
+                      return renderPersoneller();
+                    case 'ozluk':
+                      return renderOzlukBelgeleri();
+                    case 'izin':
+                      return renderComingSoon('📝 İzin Talepleri');
+                    case 'duyuru':
+                      return renderComingSoon('📢 Duyurular');
+                    case 'kartlar':
+                      return renderComingSoon('🗂️ Üretim Kartları');
+                    case 'raporlar':
+                      return renderComingSoon('📊 Üretim Raporları');
+                    case 'iletisim':
+                      return renderIletisim();
+                    default:
+                      return renderDashboard();
+                  }
+                })()}
+              </ScrollView>
+            </View>
+          ))}
+        </ScrollView>
 
         {/* Bottom Tab Navigation */}
         <View style={[styles.bottomTabContainer, { paddingBottom: Math.max(insets.bottom, 5) + 8 }]}>
@@ -1566,7 +1710,11 @@ export default function AdminDashboardScreen({ navigation }: AdminDashboardScree
               <TouchableOpacity
                 key={item.id}
                 style={styles.bottomTabItem}
-                onPress={() => setActiveSection(item.id)}
+                onPress={() => {
+                  const pageIndex = menuItems.findIndex(menuItem => menuItem.id === item.id);
+                  setActiveSection(item.id);
+                  scrollToPage(pageIndex);
+                }}
               >
                 <Ionicons 
                   name={item.icon as any} 
@@ -1939,8 +2087,6 @@ export default function AdminDashboardScreen({ navigation }: AdminDashboardScree
     </SafeAreaView>
   );
 }
-
-const { width } = Dimensions.get('window');
 
 const styles = StyleSheet.create({
   container: {
@@ -3040,5 +3186,13 @@ const styles = StyleSheet.create({
     color: '#ef4444',
     fontSize: 11,
     fontWeight: '600',
+  },
+
+  // Swipe navigation styles
+  swipeContainer: {
+    flex: 1,
+  },
+  pageContainer: {
+    flex: 1,
   },
 });
