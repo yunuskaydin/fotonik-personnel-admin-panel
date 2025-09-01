@@ -38,6 +38,14 @@ interface Stats {
   izin: number;
 }
 
+interface IletisimMesaj {
+  id: number;
+  tarih: string;
+  tur: string;
+  mesaj: string;
+  okundu: boolean;
+}
+
 interface Personel {
   id: number;
   ad: string;
@@ -68,6 +76,10 @@ export default function AdminDashboardScreen({ navigation }: AdminDashboardScree
   const [loading, setLoading] = useState(false);
   const [activeSection, setActiveSection] = useState('dashboard');
   const [personelList, setPersonelList] = useState<Personel[]>([]);
+  
+  // İletişim state'leri
+  const [iletisimMesajlari, setIletisimMesajlari] = useState<IletisimMesaj[]>([]);
+  const [selectedMessageFilter, setSelectedMessageFilter] = useState('Tümü');
   const [editModalVisible, setEditModalVisible] = useState(false);
   const [editingPersonel, setEditingPersonel] = useState<Personel | null>(null);
   const [editForm, setEditForm] = useState({
@@ -135,6 +147,8 @@ export default function AdminDashboardScreen({ navigation }: AdminDashboardScree
       setShowDocumentTypePicker(false);
       
       loadPersoneller(); // Load personnel for selection
+    } else if (activeSection === 'iletisim') {
+      loadIletisimMesajlari();
     }
   }, [activeSection]);
 
@@ -802,6 +816,94 @@ export default function AdminDashboardScreen({ navigation }: AdminDashboardScree
     );
   };
 
+  // İletişim API fonksiyonları
+  const loadIletisimMesajlari = async () => {
+    try {
+      const token = await AsyncStorage.getItem('token');
+      console.log('Token:', token);
+      console.log('API URL:', `${API_BASE_URL}/api/iletisim`);
+      
+      const response = await fetch(`${API_BASE_URL}/api/iletisim`, {
+        headers: { 
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      });
+      
+      console.log('Response status:', response.status);
+      console.log('Response headers:', response.headers);
+      
+      if (response.ok) {
+        const data = await response.json();
+        console.log('İletişim data:', data);
+        setIletisimMesajlari(data);
+      } else {
+        const errorText = await response.text();
+        console.error('İletişim mesajları yüklenemedi. Status:', response.status, 'Error:', errorText);
+      }
+    } catch (error) {
+      console.error('İletişim API error:', error);
+    }
+  };
+
+  const markAsRead = async (messageId: number) => {
+    try {
+      const token = await AsyncStorage.getItem('token');
+      const response = await fetch(`${API_BASE_URL}/api/iletisim/${messageId}/okundu`, {
+        method: 'PUT',
+        headers: { 
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      });
+      
+      if (response.ok) {
+        await loadIletisimMesajlari(); // Refresh the list
+      } else {
+        Alert.alert('Hata', 'Mesaj okundu olarak işaretlenemedi');
+      }
+    } catch (error) {
+      console.error('Mark as read error:', error);
+      Alert.alert('Hata', 'Bir hata oluştu');
+    }
+  };
+
+  const deleteMessage = async (messageId: number) => {
+    Alert.alert(
+      'Mesajı Sil',
+      'Bu mesajı silmek istediğinizden emin misiniz?',
+      [
+        { text: 'İptal', style: 'cancel' },
+        { 
+          text: 'Sil', 
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              const token = await AsyncStorage.getItem('token');
+              const response = await fetch(`${API_BASE_URL}/api/iletisim/${messageId}`, {
+                method: 'DELETE',
+                headers: { 
+                  'Authorization': `Bearer ${token}`,
+                  'Content-Type': 'application/json'
+                }
+              });
+              
+              if (response.ok) {
+                await loadIletisimMesajlari(); // Refresh the list
+                Alert.alert('Başarılı', 'Mesaj silindi');
+              } else {
+                Alert.alert('Hata', 'Mesaj silinemedi');
+              }
+            } catch (error) {
+              console.error('Delete message error:', error);
+              Alert.alert('Hata', 'Bir hata oluştu');
+            }
+          }
+        }
+      ]
+    );
+  };
+
      const downloadOzlukBelge = async (dosyaAdi: string) => {
      try {
        const url = `${API_BASE_URL}/uploads/${dosyaAdi}`;
@@ -943,7 +1045,7 @@ export default function AdminDashboardScreen({ navigation }: AdminDashboardScree
     { id: 'duyuru', title: 'Duyurular', icon: 'megaphone-outline' },
     { id: 'kartlar', title: 'Üretim Kartları', icon: 'layers-outline' },
     { id: 'raporlar', title: 'Üretim Raporları', icon: 'stats-chart-outline' },
-    { id: 'iletisim', title: 'İletişim', icon: 'mail-outline' },
+    { id: 'iletisim', title: 'Gelen Mesajlar', icon: 'mail-outline' },
   ];
 
   const renderDashboard = () => (
@@ -1300,6 +1402,120 @@ export default function AdminDashboardScreen({ navigation }: AdminDashboardScree
     </View>
   );
 
+  const renderIletisim = () => {
+    const messageTypes = ['Tümü', 'Görüş', 'Öneri', 'Şikayet'];
+    
+    const filteredMessages = selectedMessageFilter === 'Tümü' 
+      ? iletisimMesajlari 
+      : iletisimMesajlari.filter(msg => msg.tur === selectedMessageFilter);
+
+    const getMessageTypeColor = (type: string) => {
+      switch (type) {
+        case 'Şikayet': return '#ef4444';
+        case 'Öneri': return '#3b82f6';
+        case 'Görüş': return '#6b7280';
+        default: return '#6b7280';
+      }
+    };
+
+    const formatDate = (dateString: string) => {
+      return new Date(dateString).toLocaleDateString('tr-TR', {
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit'
+      });
+    };
+
+    return (
+      <View style={styles.section}>
+        {/* Compact Header */}
+        <Text style={styles.iletisimTitle}>📬 Gelen Mesajlar </Text>
+        
+        {/* Compact Filter Buttons */}
+        <View style={styles.compactFilterContainer}>
+          {messageTypes.map((type) => (
+            <TouchableOpacity
+              key={type}
+              style={[
+                styles.compactFilterButton,
+                selectedMessageFilter === type && styles.compactFilterButtonActive
+              ]}
+              onPress={() => setSelectedMessageFilter(type)}
+            >
+              <Text style={[
+                styles.compactFilterText,
+                selectedMessageFilter === type && styles.compactFilterTextActive
+              ]}>
+                {type}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+
+        {/* Messages List */}
+        <ScrollView 
+          style={styles.compactMessagesContainer}
+          showsVerticalScrollIndicator={true}
+          indicatorStyle="black"
+          scrollIndicatorInsets={{ right: 1 }}
+        >
+          {filteredMessages.length === 0 ? (
+            <View style={styles.compactEmptyContainer}>
+              <Ionicons name="mail-outline" size={40} color="#ccc" />
+              <Text style={styles.compactEmptyText}>
+                {selectedMessageFilter === 'Tümü' ? 'Henüz mesaj yok' : `${selectedMessageFilter} mesajı bulunamadı`}
+              </Text>
+            </View>
+          ) : (
+            filteredMessages.map((message) => (
+              <View key={message.id} style={[
+                styles.compactMessageCard,
+                { borderLeftColor: getMessageTypeColor(message.tur) }
+              ]}>
+                <View style={styles.compactMessageHeader}>
+                  <View style={styles.compactTypeContainer}>
+                    <View style={[styles.compactTypeBadge, { backgroundColor: getMessageTypeColor(message.tur) }]}>
+                      <Text style={styles.compactTypeText}>{message.tur}</Text>
+                    </View>
+                    {!message.okundu && (
+                      <View style={styles.compactUnreadBadge}>
+                        <Text style={styles.compactUnreadText}>Yeni</Text>
+                      </View>
+                    )}
+                  </View>
+                  <Text style={styles.compactMessageDate}>{formatDate(message.tarih)}</Text>
+                </View>
+                
+                <Text style={styles.compactMessageContent}>{message.mesaj}</Text>
+                
+                <View style={styles.compactMessageActions}>
+                  {!message.okundu && (
+                    <TouchableOpacity
+                      style={styles.compactReadButton}
+                      onPress={() => markAsRead(message.id)}
+                    >
+                      <Ionicons name="checkmark-circle-outline" size={14} color="#22c55e" />
+                      <Text style={styles.compactReadText}>Okundu</Text>
+                    </TouchableOpacity>
+                  )}
+                  <TouchableOpacity
+                    style={styles.compactDeleteButton}
+                    onPress={() => deleteMessage(message.id)}
+                  >
+                    <Ionicons name="trash-outline" size={14} color="#ef4444" />
+                    <Text style={styles.compactDeleteText}>Sil</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            ))
+          )}
+        </ScrollView>
+      </View>
+    );
+  };
+
   const renderContent = () => {
     switch (activeSection) {
       case 'dashboard':
@@ -1317,7 +1533,7 @@ export default function AdminDashboardScreen({ navigation }: AdminDashboardScree
       case 'raporlar':
         return renderComingSoon('📊 Üretim Raporları');
       case 'iletisim':
-        return renderComingSoon('📬 İletişim');
+        return renderIletisim();
       default:
         return renderDashboard();
     }
@@ -1814,7 +2030,7 @@ const styles = StyleSheet.create({
     fontWeight: '900',
     color: '#134b79',
     textAlign: 'center',
-    marginBottom: 20,
+    marginBottom: 8,
   },
   addPersonButton: {
     backgroundColor: '#1761a0',
@@ -2534,6 +2750,295 @@ const styles = StyleSheet.create({
   },
   pickerItemTextSelected: {
     color: '#1761a0',
+    fontWeight: '600',
+  },
+
+  // İletişim styles
+  filterContainer: {
+    marginTop: 4,
+    marginBottom: 0,
+    paddingHorizontal: 16,
+    paddingVertical: 0,
+  },
+  filterButton: {
+    backgroundColor: '#f8f9fa',
+    paddingHorizontal: 16,
+    paddingVertical: 2,
+    borderRadius: 20,
+    marginRight: 4,
+    borderWidth: 1,
+    borderColor: '#e9ecef',
+    minHeight: 28,
+    maxHeight: 36,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  filterButtonActive: {
+    backgroundColor: '#1761a0',
+    borderColor: '#1761a0',
+  },
+  filterButtonText: {
+    color: '#6c757d',
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  filterButtonTextActive: {
+    color: '#fff',
+    fontWeight: '600',
+  },
+  messagesContainer: {
+    flex: 1,
+    paddingHorizontal: 16,
+    marginTop: -4,
+  },
+  emptyMessageContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 20,
+    marginTop: 20,
+  },
+  emptyMessageText: {
+    fontSize: 16,
+    color: '#6c757d',
+    marginTop: 12,
+    textAlign: 'center',
+  },
+  messageCard: {
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 12,
+    borderLeftWidth: 4,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  messageHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: 12,
+  },
+  messageTypeContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  messageTypeBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+  messageTypeText: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  unreadBadge: {
+    backgroundColor: '#22c55e',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 8,
+  },
+  unreadText: {
+    color: '#fff',
+    fontSize: 10,
+    fontWeight: '600',
+  },
+  messageDate: {
+    fontSize: 12,
+    color: '#6c757d',
+  },
+  messageContent: {
+    fontSize: 14,
+    color: '#333',
+    lineHeight: 20,
+    marginBottom: 12,
+  },
+  messageActions: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    gap: 12,
+  },
+  markReadButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    backgroundColor: '#f0f9ff',
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#22c55e',
+  },
+  markReadText: {
+    color: '#22c55e',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  messageDeleteButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    backgroundColor: '#fef2f2',
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#ef4444',
+  },
+  messageDeleteButtonText: {
+    color: '#ef4444',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+
+  // Compact İletişim styles
+  iletisimTitle: {
+    fontSize: 24,
+    fontWeight: '800',
+    color: '#134b79',
+    textAlign: 'center',
+    marginBottom: 6,
+  },
+  compactFilterContainer: {
+    flexDirection: 'row',
+    paddingHorizontal: 16,
+    marginBottom: 8,
+    justifyContent: 'space-around',
+  },
+  compactFilterButton: {
+    backgroundColor: '#f8f9fa',
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    borderRadius: 18,
+    marginHorizontal: 2,
+    borderWidth: 1,
+    borderColor: '#e9ecef',
+    minHeight: 28,
+  },
+  compactFilterButtonActive: {
+    backgroundColor: '#1761a0',
+    borderColor: '#1761a0',
+  },
+  compactFilterText: {
+    color: '#6c757d',
+    fontSize: 13,
+    fontWeight: '500',
+    textAlign: 'center',
+  },
+  compactFilterTextActive: {
+    color: '#fff',
+    fontWeight: '600',
+    fontSize: 13,
+  },
+  compactMessagesContainer: {
+    flex: 1,
+    paddingHorizontal: 16,
+  },
+  compactEmptyContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 30,
+    marginTop: 20,
+  },
+  compactEmptyText: {
+    fontSize: 14,
+    color: '#6c757d',
+    marginTop: 8,
+    textAlign: 'center',
+  },
+  compactMessageCard: {
+    backgroundColor: '#fff',
+    borderRadius: 10,
+    padding: 14,
+    marginBottom: 10,
+    borderLeftWidth: 3,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.08,
+    shadowRadius: 2,
+    elevation: 2,
+  },
+  compactMessageHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: 8,
+  },
+  compactTypeContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  compactTypeBadge: {
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 8,
+  },
+  compactTypeText: {
+    color: '#fff',
+    fontSize: 11,
+    fontWeight: '600',
+  },
+  compactUnreadBadge: {
+    backgroundColor: '#22c55e',
+    paddingHorizontal: 4,
+    paddingVertical: 1,
+    borderRadius: 6,
+  },
+  compactUnreadText: {
+    color: '#fff',
+    fontSize: 8,
+    fontWeight: '600',
+  },
+  compactMessageDate: {
+    fontSize: 11,
+    color: '#6c757d',
+  },
+  compactMessageContent: {
+    fontSize: 14,
+    color: '#333',
+    lineHeight: 20,
+    marginBottom: 10,
+  },
+  compactMessageActions: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    gap: 8,
+  },
+  compactReadButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    backgroundColor: '#f0f9ff',
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#22c55e',
+  },
+  compactReadText: {
+    color: '#22c55e',
+    fontSize: 11,
+    fontWeight: '600',
+  },
+  compactDeleteButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    backgroundColor: '#fef2f2',
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#ef4444',
+  },
+  compactDeleteText: {
+    color: '#ef4444',
+    fontSize: 11,
     fontWeight: '600',
   },
 });
