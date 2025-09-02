@@ -13,6 +13,7 @@ import {
 import { LinearGradient } from 'expo-linear-gradient';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Ionicons from 'react-native-vector-icons/Ionicons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 interface PersonelDashboardScreenProps {
   navigation: any;
@@ -25,6 +26,7 @@ interface PersonelData {
 }
 
 export default function PersonelDashboardScreen({ navigation }: PersonelDashboardScreenProps) {
+  const insets = useSafeAreaInsets();
   const [loading, setLoading] = useState(false);
   const [activeSection, setActiveSection] = useState('home');
   const [personelData, setPersonelData] = useState<PersonelData | null>(null);
@@ -224,6 +226,7 @@ export default function PersonelDashboardScreen({ navigation }: PersonelDashboar
         {/* Content */}
         <ScrollView
           style={styles.content}
+          contentContainerStyle={{ paddingBottom: (Math.max(insets.bottom, 5) + 8) + 72 }}
           refreshControl={
             <RefreshControl refreshing={loading} onRefresh={loadPersonelData} />
           }
@@ -232,7 +235,7 @@ export default function PersonelDashboardScreen({ navigation }: PersonelDashboar
         </ScrollView>
 
         {/* Bottom Tab Navigation */}
-        <View style={styles.bottomTabContainer}>
+        <View style={[styles.bottomTabContainer, { paddingBottom: Math.max(insets.bottom, 5) + 8 }] }>
           <ScrollView 
             horizontal 
             showsHorizontalScrollIndicator={false}
@@ -395,7 +398,11 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.1,
     shadowRadius: 3.84,
     elevation: 5,
-    height: 60,
+    paddingTop: 6,
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
   },
   bottomTabScroll: {
     flex: 1,
