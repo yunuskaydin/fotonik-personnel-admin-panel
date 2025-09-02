@@ -11,6 +11,7 @@ import {
   Dimensions,
   Linking,
   Image,
+  TextInput,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -39,12 +40,18 @@ interface DuyuruItem {
   createdAt: string;
 }
 
+interface IletisimForm {
+  tur: string;
+  mesaj: string;
+}
+
 export default function PersonelDashboardScreen({ navigation }: PersonelDashboardScreenProps) {
   const insets = useSafeAreaInsets();
   const [loading, setLoading] = useState(false);
   const [activeSection, setActiveSection] = useState('home');
   const [personelData, setPersonelData] = useState<PersonelData | null>(null);
   const [duyurular, setDuyurular] = useState<DuyuruItem[]>([]);
+  const [iletisimForm, setIletisimForm] = useState<IletisimForm>({ tur: '', mesaj: '' });
 
   useEffect(() => {
     loadPersonelData();
@@ -141,6 +148,41 @@ export default function PersonelDashboardScreen({ navigation }: PersonelDashboar
         setDuyurular(list);
       }
     } catch {}
+  };
+
+  const sendIletisim = async () => {
+    try {
+      const token = await AsyncStorage.getItem('token');
+      if (!token) return;
+
+      if (!iletisimForm.tur || !iletisimForm.mesaj.trim()) {
+        Alert.alert('Hata', 'Lütfen tüm alanları doldurun.');
+        return;
+      }
+
+      const response = await fetch(`${API_BASE_URL}/api/iletisim`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          tur: iletisimForm.tur,
+          mesaj: iletisimForm.mesaj.trim()
+        })
+      });
+
+      if (response.ok) {
+        Alert.alert('Başarılı', 'Mesajınız başarıyla gönderildi.');
+        setIletisimForm({ tur: '', mesaj: '' });
+      } else {
+        const error = await response.json().catch(() => ({ message: 'Hata oluştu' }));
+        Alert.alert('Hata', error.message || 'Mesaj gönderilemedi.');
+      }
+    } catch (error) {
+      console.error('İletişim hatası:', error);
+      Alert.alert('Hata', 'Bağlantı hatası oluştu.');
+    }
   };
 
   // Dosyayı indirip paylaş/galeri seçenekleri sun
@@ -319,6 +361,71 @@ export default function PersonelDashboardScreen({ navigation }: PersonelDashboar
     </View>
   );
 
+  const renderIletisim = () => (
+    <View style={styles.section}>
+      <Text style={styles.sectionTitle}>💬 Görüş / Öneri / Şikayet</Text>
+      
+      <View style={styles.actionCard}>
+        <Text style={{ fontSize: 16, fontWeight: '600', color: '#0e2a47', marginBottom: 15 }}>
+          Mesajınızı gönderin
+        </Text>
+        
+        <View style={{ marginBottom: 15 }}>
+          <Text style={{ fontSize: 14, fontWeight: '500', color: '#374151', marginBottom: 8 }}>
+            Tür
+          </Text>
+          <View style={styles.iletisimTurContainer}>
+            {['Görüş', 'Öneri', 'Şikayet'].map((tur) => (
+              <TouchableOpacity
+                key={tur}
+                style={[
+                  styles.iletisimTurButton,
+                  iletisimForm.tur === tur && styles.iletisimTurButtonActive
+                ]}
+                onPress={() => setIletisimForm({ ...iletisimForm, tur })}
+              >
+                <Text style={[
+                  styles.iletisimTurButtonText,
+                  iletisimForm.tur === tur && styles.iletisimTurButtonTextActive
+                ]}>
+                  {tur}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        </View>
+
+        <View style={{ marginBottom: 20 }}>
+          <Text style={{ fontSize: 14, fontWeight: '500', color: '#374151', marginBottom: 8 }}>
+            Mesajınız
+          </Text>
+          <View style={styles.iletisimMesajContainer}>
+            <TextInput
+              style={styles.iletisimMesajInput}
+              placeholder="Mesajınızı buraya yazın..."
+              value={iletisimForm.mesaj}
+              onChangeText={(text) => setIletisimForm({ ...iletisimForm, mesaj: text })}
+              multiline
+              numberOfLines={4}
+              textAlignVertical="top"
+            />
+          </View>
+        </View>
+
+        <TouchableOpacity
+          style={[
+            styles.iletisimGonderButton,
+            (!iletisimForm.tur || !iletisimForm.mesaj.trim()) && styles.iletisimGonderButtonDisabled
+          ]}
+          onPress={sendIletisim}
+          disabled={!iletisimForm.tur || !iletisimForm.mesaj.trim()}
+        >
+          <Text style={styles.iletisimGonderButtonText}>Gönder</Text>
+        </TouchableOpacity>
+      </View>
+    </View>
+  );
+
   const renderContent = () => {
     switch (activeSection) {
       case 'home':
@@ -332,7 +439,7 @@ export default function PersonelDashboardScreen({ navigation }: PersonelDashboar
       case 'duyuru':
         return renderDuyurular();
       case 'iletisim':
-        return renderComingSoon('Görüş/Öneri/Şikayet', '💬');
+        return renderIletisim();
       default:
         return renderHome();
     }
@@ -550,5 +657,59 @@ const styles = StyleSheet.create({
     paddingHorizontal: 6,
     borderRadius: 8,
     minWidth: 35,
+  },
+  // İletişim stilleri
+  iletisimTurContainer: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  iletisimTurButton: {
+    flex: 1,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#d1d5db',
+    backgroundColor: '#fff',
+    alignItems: 'center',
+  },
+  iletisimTurButtonActive: {
+    backgroundColor: '#25b2ef',
+    borderColor: '#25b2ef',
+  },
+  iletisimTurButtonText: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: '#374151',
+  },
+  iletisimTurButtonTextActive: {
+    color: '#fff',
+  },
+  iletisimMesajContainer: {
+    borderWidth: 1,
+    borderColor: '#d1d5db',
+    borderRadius: 8,
+    backgroundColor: '#fff',
+  },
+  iletisimMesajInput: {
+    padding: 12,
+    fontSize: 16,
+    color: '#374151',
+    minHeight: 100,
+  },
+  iletisimGonderButton: {
+    backgroundColor: '#25b2ef',
+    paddingVertical: 14,
+    paddingHorizontal: 24,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  iletisimGonderButtonDisabled: {
+    backgroundColor: '#9ca3af',
+  },
+  iletisimGonderButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
   },
 });
