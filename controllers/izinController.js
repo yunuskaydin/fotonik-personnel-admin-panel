@@ -78,16 +78,30 @@ exports.updateStatus = (req, res) => {
   let izin = izinler.find(i => i.id == req.params.id);
   if (!izin) return res.status(404).json({ message: "İzin bulunamadı." });
 
-  const { durum } = req.body; // "Onaylandı", "Reddedildi"
-  if (!["Onaylandı", "Reddedildi"].includes(durum))
+  const { durum } = req.body; // "Onaylandı", "Reddedildi", "Beklemede"
+  if (!["Onaylandı", "Reddedildi", "Beklemede"].includes(durum))
     return res.status(400).json({ message: "Geçersiz durum." });
 
-  if (izin.durum !== "Beklemede")
-    return res.status(400).json({ message: "Bu izin zaten işlenmiş." });
+  // Eğer mevcut durum Beklemede ise sadece Onaylandı/Reddedildi'ye geçilebilir.
+  // Eğer mevcut durum Onaylandı/Reddedildi ise sadece Beklemede'ye geri alınabilir.
+  if (izin.durum === "Beklemede" && durum === "Beklemede") {
+    return res.status(400).json({ message: "Zaten beklemede." });
+  }
+  if (izin.durum === "Beklemede" && !["Onaylandı", "Reddedildi"].includes(durum)) {
+    return res.status(400).json({ message: "Geçersiz geçiş." });
+  }
+  if (["Onaylandı", "Reddedildi"].includes(izin.durum) && durum !== "Beklemede") {
+    return res.status(400).json({ message: "Sadece Beklemede'ye geri alınabilir." });
+  }
 
   izin.durum = durum;
-  izin.onaylayan = req.admin ? req.admin.ad : "admin";
-  izin.onayTarihi = new Date().toISOString();
+  if (durum === "Beklemede") {
+    izin.onaylayan = null;
+    izin.onayTarihi = null;
+  } else {
+    izin.onaylayan = req.admin ? req.admin.ad : "admin";
+    izin.onayTarihi = new Date().toISOString();
+  }
 
   fs.writeFileSync(izinFile, JSON.stringify(izinler, null, 2));
   res.json({ message: "İzin durumu güncellendi." });

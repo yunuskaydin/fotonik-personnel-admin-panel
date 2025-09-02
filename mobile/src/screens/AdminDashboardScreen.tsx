@@ -45,6 +45,27 @@ interface IletisimMesaj {
   okundu: boolean;
 }
 
+interface IzinTalebi {
+  id: number;
+  personelId: number;
+  tur: string;
+  baslangic: string;
+  bitis: string;
+  gun: number;
+  gerekce: string;
+  belge?: string;
+  durum: string;
+  tarih: string;
+  onayTarihi?: string;
+  onaylayan?: string;
+}
+
+interface IzinTuru {
+  key: string;
+  ad: string;
+  toplam: number;
+}
+
 interface Personel {
   id: number;
   ad: string;
@@ -85,6 +106,21 @@ export default function AdminDashboardScreen({ navigation }: AdminDashboardScree
   // İletişim state'leri
   const [iletisimMesajlari, setIletisimMesajlari] = useState<IletisimMesaj[]>([]);
   const [selectedMessageFilter, setSelectedMessageFilter] = useState('Tümü');
+  
+  // İzin Talepleri State'leri
+  const [izinTalepleri, setIzinTalepleri] = useState<IzinTalebi[]>([]);
+  const [izinTurleri, setIzinTurleri] = useState<IzinTuru[]>([]);
+  const [izinFilters, setIzinFilters] = useState({
+    ay: 'Tümü',
+    yil: 'Tümü',
+    personelId: '',
+    tur: '',
+    durum: ''
+  });
+  const [showMonthDropdown, setShowMonthDropdown] = useState(false);
+  const [showYearDropdown, setShowYearDropdown] = useState(false);
+  const [showPersonDropdown, setShowPersonDropdown] = useState(false);
+  const [showStatusDropdown, setShowStatusDropdown] = useState(false);
   const [editModalVisible, setEditModalVisible] = useState(false);
   const [editingPersonel, setEditingPersonel] = useState<Personel | null>(null);
   const [editForm, setEditForm] = useState({
@@ -173,6 +209,9 @@ export default function AdminDashboardScreen({ navigation }: AdminDashboardScree
       }
     } else if (activeSection === 'iletisim') {
       loadIletisimMesajlari();
+    } else if (activeSection === 'izin') {
+      loadIzinTalepleri();
+      loadIzinTurleri();
     }
     
     // Update page index when activeSection changes via bottom navigation
@@ -976,6 +1015,185 @@ export default function AdminDashboardScreen({ navigation }: AdminDashboardScree
     );
   };
 
+  // İzin Talepleri API fonksiyonları
+  const loadIzinTalepleri = async () => {
+    try {
+      const token = await AsyncStorage.getItem('token');
+      
+      const [izinlerResponse, personellerResponse] = await Promise.all([
+        fetch(`${API_BASE_URL}/api/izin/all`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        }),
+        fetch(`${API_BASE_URL}/api/personel`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        })
+      ]);
+      
+      if (izinlerResponse.ok && personellerResponse.ok) {
+        const izinler = await izinlerResponse.json();
+        const personeller = await personellerResponse.json();
+        
+        setIzinTalepleri(izinler);
+        setPersonelList(personeller);
+      }
+    } catch (error) {
+      console.error('İzin talepleri yükleme hatası:', error);
+    }
+  };
+
+  const loadIzinTurleri = async () => {
+    const izinTurleri = [
+      { key: "yillik", ad: "Yıllık Ücretli İzin", toplam: 14 },
+      { key: "ucretsiz", ad: "Ücretsiz İzin", toplam: 30 },
+      { key: "mazeret", ad: "Mazeret İzni", toplam: 7 },
+      { key: "rapor", ad: "Sağlık Raporu", toplam: 20 }
+    ];
+    setIzinTurleri(izinTurleri);
+  };
+
+  const updateIzinStatus = async (izinId: number, durum: string) => {
+    try {
+      const token = await AsyncStorage.getItem('token');
+      const response = await fetch(`${API_BASE_URL}/api/izin/${izinId}`, {
+        method: 'PUT',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ durum })
+      });
+      
+      if (response.ok) {
+        const successMessage =
+          durum === 'Onaylandı'
+            ? 'İzin talebi onaylandı'
+            : durum === 'Reddedildi'
+              ? 'İzin talebi reddedildi'
+              : 'İzin talebi beklemeye alındı';
+        Alert.alert('Başarılı', successMessage);
+        await loadIzinTalepleri();
+        await loadStats(); // İstatistikleri güncelle
+      } else {
+        const errorText = await response.text().catch(() => '');
+        Alert.alert('Hata', `İzin durumu güncellenemedi (HTTP ${response.status})${errorText ? `\n${errorText}` : ''}`);
+      }
+    } catch (error) {
+      Alert.alert('Hata', 'Bir hata oluştu');
+    }
+  };
+
+  const confirmIzinStatusChange = (izinId: number, durum: 'Onaylandı' | 'Reddedildi' | 'Beklemede') => {
+    const title = durum === 'Onaylandı' ? 'İzni Onayla' : durum === 'Reddedildi' ? 'İzni Reddet' : 'Durumu Geri Al';
+    const message =
+      durum === 'Onaylandı'
+        ? 'Bu izin talebini onaylamak istediğinize emin misiniz?'
+        : durum === 'Reddedildi'
+          ? 'Bu izin talebini reddetmek istediğinize emin misiniz?'
+          : 'Bu izin talebini tekrar Beklemede durumuna almak istediğinize emin misiniz?';
+    Alert.alert(title, message, [
+      { text: 'İptal', style: 'cancel' },
+      { text: 'Evet', style: 'destructive', onPress: () => updateIzinStatus(izinId, durum) }
+    ]);
+  };
+
+  const getKalanHaklar = async (personelId: number) => {
+    try {
+      const token = await AsyncStorage.getItem('token');
+      
+      const response = await fetch(`${API_BASE_URL}/api/izin/kalan/${personelId}`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      
+      if (response.ok) {
+        return await response.json();
+      }
+      return {};
+    } catch (error) {
+      console.error('Kalan haklar yükleme hatası:', error);
+      return {};
+    }
+  };
+
+  // İzin Talepleri Filter Fonksiyonları
+  const getFilteredIzinTalepleri = () => {
+    return izinTalepleri.filter(izin => {
+      const baslangicTarihi = new Date(izin.baslangic);
+      const bitisTarihi = new Date(izin.bitis);
+      
+      // Ay kontrolü - izin birden fazla aya yayılabilir
+      let ayKontrolPassed = false;
+      if (izinFilters.ay === 'Tümü') {
+        ayKontrolPassed = true;
+      } else {
+        // İzin süresince geçen tüm ayları kontrol et
+        const current = new Date(baslangicTarihi);
+        while (current <= bitisTarihi) {
+          const currentMonth = String(current.getMonth() + 1).padStart(2, '0');
+          if (currentMonth === izinFilters.ay) {
+            ayKontrolPassed = true;
+            break;
+          }
+          // Bir sonraki aya geç
+          current.setMonth(current.getMonth() + 1);
+          current.setDate(1); // Ayın ilk günü
+        }
+      }
+      
+      // Yıl kontrolü - benzer şekilde birden fazla yıla yayılabilir
+      let yilKontrolPassed = false;
+      if (izinFilters.yil === 'Tümü') {
+        yilKontrolPassed = true;
+      } else {
+        const baslangicYil = String(baslangicTarihi.getFullYear());
+        const bitisYil = String(bitisTarihi.getFullYear());
+        yilKontrolPassed = baslangicYil === izinFilters.yil || bitisYil === izinFilters.yil;
+      }
+      
+      return (
+        ayKontrolPassed &&
+        yilKontrolPassed &&
+        (izinFilters.personelId === '' || String(izin.personelId) === izinFilters.personelId) &&
+        (izinFilters.tur === '' || izin.tur === izinFilters.tur) &&
+        (izinFilters.durum === '' || izin.durum === izinFilters.durum)
+      );
+    });
+  };
+
+  const getPersonelName = (personelId: number) => {
+    const personel = personelList.find(p => p.id === personelId);
+    return personel ? `${personel.ad} ${personel.soyad}` : 'Bilinmeyen';
+  };
+
+  const getIzinTuruName = (turKey: string) => {
+    const tur = izinTurleri.find(t => t.key === turKey);
+    return tur ? tur.ad : turKey;
+  };
+
+  const generateYearOptions = () => {
+    const currentYear = new Date().getFullYear();
+    const years = ['Tümü'];
+    for (let i = currentYear; i >= currentYear - 5; i--) {
+      years.push(String(i));
+    }
+    return years;
+  };
+
+  const monthOptions = [
+    { value: 'Tümü', label: 'Tümü' },
+    { value: '01', label: 'Ocak' },
+    { value: '02', label: 'Şubat' },
+    { value: '03', label: 'Mart' },
+    { value: '04', label: 'Nisan' },
+    { value: '05', label: 'Mayıs' },
+    { value: '06', label: 'Haziran' },
+    { value: '07', label: 'Temmuz' },
+    { value: '08', label: 'Ağustos' },
+    { value: '09', label: 'Eylül' },
+    { value: '10', label: 'Ekim' },
+    { value: '11', label: 'Kasım' },
+    { value: '12', label: 'Aralık' }
+  ];
+
      const downloadOzlukBelge = async (dosyaAdi: string) => {
      try {
        const url = `${API_BASE_URL}/uploads/${dosyaAdi}`;
@@ -1606,6 +1824,406 @@ export default function AdminDashboardScreen({ navigation }: AdminDashboardScree
     );
   };
 
+  const renderIzinTalepleri = () => {
+    const filteredIzinTalepleri = getFilteredIzinTalepleri();
+
+    const getDurumColor = (durum: string) => {
+      switch (durum) {
+        case 'Onaylandı': return '#22c55e';
+        case 'Reddedildi': return '#ef4444';
+        case 'Beklemede': return '#f59e0b';
+        default: return '#6b7280';
+      }
+    };
+
+    const formatDate = (dateString: string) => {
+      return new Date(dateString).toLocaleDateString('tr-TR');
+    };
+
+    return (
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>📝 İzin Talepleri</Text>
+        
+        {/* Filters */}
+        <View style={styles.filtersContainer}>
+          <View style={styles.filterRow}>
+            <View style={styles.filterItem}>
+              <Text style={styles.filterLabel}>Ay:</Text>
+              <TouchableOpacity 
+                style={styles.izinFilterButton}
+                onPress={() => setShowMonthDropdown(true)}
+              >
+                <Text style={styles.izinFilterButtonText}>
+                  {monthOptions.find(m => m.value === izinFilters.ay)?.label || 'Tümü'}
+                </Text>
+                <Ionicons name="chevron-down-outline" size={16} color="#374151" />
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.filterItem}>
+              <Text style={styles.filterLabel}>Yıl:</Text>
+              <TouchableOpacity 
+                style={styles.izinFilterButton}
+                onPress={() => setShowYearDropdown(true)}
+              >
+                <Text style={styles.izinFilterButtonText}>{izinFilters.yil}</Text>
+                <Ionicons name="chevron-down-outline" size={16} color="#374151" />
+              </TouchableOpacity>
+            </View>
+          </View>
+
+          <View style={styles.filterRow}>
+            <View style={styles.filterItem}>
+              <Text style={styles.filterLabel}>Personel:</Text>
+              <TouchableOpacity 
+                style={styles.izinFilterButton}
+                onPress={() => setShowPersonDropdown(true)}
+              >
+                <Text style={styles.izinFilterButtonText}>
+                  {izinFilters.personelId ? getPersonelName(Number(izinFilters.personelId)) : 'Tümü'}
+                </Text>
+                <Ionicons name="chevron-down-outline" size={16} color="#374151" />
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.filterItem}>
+              <Text style={styles.filterLabel}>Durum:</Text>
+              <TouchableOpacity 
+                style={styles.izinFilterButton}
+                onPress={() => setShowStatusDropdown(true)}
+              >
+                <Text style={styles.izinFilterButtonText}>
+                  {izinFilters.durum || 'Tümü'}
+                </Text>
+                <Ionicons name="chevron-down-outline" size={16} color="#374151" />
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+
+        {/* İzin Talepleri Listesi */}
+        <ScrollView style={styles.izinListContainer}>
+          {filteredIzinTalepleri.length === 0 ? (
+            <View style={styles.emptyContainer}>
+              <Ionicons name="document-text-outline" size={40} color="#ccc" />
+              <Text style={styles.emptyText}>İzin talebi bulunamadı</Text>
+            </View>
+          ) : (
+            filteredIzinTalepleri.map((izin) => (
+              <View key={izin.id} style={styles.izinCard}>
+                <View style={styles.izinHeader}>
+                  <Text style={styles.izinPersonelName}>
+                    {getPersonelName(izin.personelId)}
+                  </Text>
+                  <View style={[styles.izinDurumBadge, { backgroundColor: getDurumColor(izin.durum) }]}>
+                    <Text style={styles.izinDurumText}>{izin.durum}</Text>
+                  </View>
+                </View>
+
+                <View style={styles.izinDetails}>
+                  <Text style={styles.izinDetailText}>
+                    <Text style={styles.izinDetailLabel}>İzin Türü: </Text>
+                    {getIzinTuruName(izin.tur)}
+                  </Text>
+                  <Text style={styles.izinDetailText}>
+                    <Text style={styles.izinDetailLabel}>Tarih: </Text>
+                    {formatDate(izin.baslangic)} - {formatDate(izin.bitis)} ({izin.gun} gün)
+                  </Text>
+                  {izin.gerekce && (
+                    <Text style={styles.izinDetailText}>
+                      <Text style={styles.izinDetailLabel}>Gerekçe: </Text>
+                      {izin.gerekce}
+                    </Text>
+                  )}
+                  {izin.belge && (
+                    <TouchableOpacity 
+                      style={styles.belgeButton}
+                      onPress={() => downloadOzlukBelge(izin.belge!)}
+                    >
+                      <Ionicons name="document-attach-outline" size={16} color="#3b82f6" />
+                      <Text style={styles.belgeButtonText}>Belgeyi Görüntüle</Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
+
+                <View style={styles.izinActions}>
+                  {izin.durum === 'Beklemede' ? (
+                    <>
+                      <TouchableOpacity
+                        style={[styles.izinActionButton, styles.approveButton]}
+                        onPress={() => confirmIzinStatusChange(izin.id, 'Onaylandı')}
+                      >
+                        <Ionicons name="checkmark-circle-outline" size={16} color="#fff" />
+                        <Text style={styles.izinActionText}>Onayla</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={[styles.izinActionButton, styles.rejectButton]}
+                        onPress={() => confirmIzinStatusChange(izin.id, 'Reddedildi')}
+                      >
+                        <Ionicons name="close-circle-outline" size={16} color="#fff" />
+                        <Text style={styles.izinActionText}>Reddet</Text>
+                      </TouchableOpacity>
+                    </>
+                  ) : (
+                    <TouchableOpacity
+                      style={[styles.izinActionButton, { backgroundColor: '#6b7280' }]}
+                      onPress={() => confirmIzinStatusChange(izin.id, 'Beklemede')}
+                    >
+                      <Ionicons name="refresh-circle-outline" size={16} color="#fff" />
+                      <Text style={styles.izinActionText}>Geri Al</Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
+              </View>
+            ))
+          )}
+        </ScrollView>
+
+        {/* Ay Dropdown Modal */}
+        <Modal
+          visible={showMonthDropdown}
+          transparent={true}
+          animationType="fade"
+          onRequestClose={() => setShowMonthDropdown(false)}
+        >
+          <TouchableOpacity 
+            style={styles.modalOverlay}
+            activeOpacity={1}
+            onPress={() => setShowMonthDropdown(false)}
+          >
+            <View style={styles.monthDropdownContainer}>
+              <View style={styles.monthDropdownHeader}>
+                <Text style={styles.monthDropdownTitle}>Ay Seç</Text>
+                <TouchableOpacity 
+                  onPress={() => setShowMonthDropdown(false)}
+                  style={styles.monthDropdownClose}
+                >
+                  <Ionicons name="close-outline" size={24} color="#6b7280" />
+                </TouchableOpacity>
+              </View>
+              
+              <ScrollView 
+                style={styles.monthDropdownScroll}
+                showsVerticalScrollIndicator={true}
+                indicatorStyle="default"
+              >
+                {monthOptions.map((monthOption) => (
+                  <TouchableOpacity
+                    key={monthOption.value}
+                    style={[
+                      styles.monthDropdownItem,
+                      izinFilters.ay === monthOption.value && styles.monthDropdownItemSelected
+                    ]}
+                    onPress={() => {
+                      setIzinFilters({...izinFilters, ay: monthOption.value});
+                      setShowMonthDropdown(false);
+                    }}
+                  >
+                    <Text style={[
+                      styles.monthDropdownItemText,
+                      izinFilters.ay === monthOption.value && styles.monthDropdownItemTextSelected
+                    ]}>
+                      {monthOption.label}
+                    </Text>
+                    {izinFilters.ay === monthOption.value && (
+                      <Ionicons name="checkmark-outline" size={20} color="#25b2ef" />
+                    )}
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+            </View>
+          </TouchableOpacity>
+        </Modal>
+
+        {/* Yıl Dropdown Modal */}
+        <Modal
+          visible={showYearDropdown}
+          transparent={true}
+          animationType="fade"
+          onRequestClose={() => setShowYearDropdown(false)}
+        >
+          <TouchableOpacity 
+            style={styles.modalOverlay}
+            activeOpacity={1}
+            onPress={() => setShowYearDropdown(false)}
+          >
+            <View style={styles.monthDropdownContainer}>
+              <View style={styles.monthDropdownHeader}>
+                <Text style={styles.monthDropdownTitle}>Yıl Seç</Text>
+                <TouchableOpacity 
+                  onPress={() => setShowYearDropdown(false)}
+                  style={styles.monthDropdownClose}
+                >
+                  <Ionicons name="close-outline" size={24} color="#6b7280" />
+                </TouchableOpacity>
+              </View>
+              <ScrollView 
+                style={styles.monthDropdownScroll}
+                showsVerticalScrollIndicator={true}
+                indicatorStyle="default"
+              >
+                {generateYearOptions().map((yil) => (
+                  <TouchableOpacity
+                    key={yil}
+                    style={[
+                      styles.monthDropdownItem,
+                      izinFilters.yil === yil && styles.monthDropdownItemSelected
+                    ]}
+                    onPress={() => {
+                      setIzinFilters({...izinFilters, yil});
+                      setShowYearDropdown(false);
+                    }}
+                  >
+                    <Text style={[
+                      styles.monthDropdownItemText,
+                      izinFilters.yil === yil && styles.monthDropdownItemTextSelected
+                    ]}>
+                      {yil}
+                    </Text>
+                    {izinFilters.yil === yil && (
+                      <Ionicons name="checkmark-outline" size={20} color="#25b2ef" />
+                    )}
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+            </View>
+          </TouchableOpacity>
+        </Modal>
+
+        {/* Personel Dropdown Modal */}
+        <Modal
+          visible={showPersonDropdown}
+          transparent={true}
+          animationType="fade"
+          onRequestClose={() => setShowPersonDropdown(false)}
+        >
+          <TouchableOpacity 
+            style={styles.modalOverlay}
+            activeOpacity={1}
+            onPress={() => setShowPersonDropdown(false)}
+          >
+            <View style={styles.monthDropdownContainer}>
+              <View style={styles.monthDropdownHeader}>
+                <Text style={styles.monthDropdownTitle}>Personel Seç</Text>
+                <TouchableOpacity 
+                  onPress={() => setShowPersonDropdown(false)}
+                  style={styles.monthDropdownClose}
+                >
+                  <Ionicons name="close-outline" size={24} color="#6b7280" />
+                </TouchableOpacity>
+              </View>
+              <ScrollView 
+                style={styles.monthDropdownScroll}
+                showsVerticalScrollIndicator={true}
+                indicatorStyle="default"
+              >
+                <TouchableOpacity
+                  key={'all'}
+                  style={[
+                    styles.monthDropdownItem,
+                    izinFilters.personelId === '' && styles.monthDropdownItemSelected
+                  ]}
+                  onPress={() => {
+                    setIzinFilters({...izinFilters, personelId: ''});
+                    setShowPersonDropdown(false);
+                  }}
+                >
+                  <Text style={[
+                    styles.monthDropdownItemText,
+                    izinFilters.personelId === '' && styles.monthDropdownItemTextSelected
+                  ]}>
+                    Tümü
+                  </Text>
+                  {izinFilters.personelId === '' && (
+                    <Ionicons name="checkmark-outline" size={20} color="#25b2ef" />
+                  )}
+                </TouchableOpacity>
+                {personelList.map((p) => (
+                  <TouchableOpacity
+                    key={p.id}
+                    style={[
+                      styles.monthDropdownItem,
+                      String(p.id) === izinFilters.personelId && styles.monthDropdownItemSelected
+                    ]}
+                    onPress={() => {
+                      setIzinFilters({...izinFilters, personelId: String(p.id)});
+                      setShowPersonDropdown(false);
+                    }}
+                  >
+                    <Text style={[
+                      styles.monthDropdownItemText,
+                      String(p.id) === izinFilters.personelId && styles.monthDropdownItemTextSelected
+                    ]}>
+                      {`${p.ad} ${p.soyad}`}
+                    </Text>
+                    {String(p.id) === izinFilters.personelId && (
+                      <Ionicons name="checkmark-outline" size={20} color="#25b2ef" />
+                    )}
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+            </View>
+          </TouchableOpacity>
+        </Modal>
+
+        {/* Durum Dropdown Modal */}
+        <Modal
+          visible={showStatusDropdown}
+          transparent={true}
+          animationType="fade"
+          onRequestClose={() => setShowStatusDropdown(false)}
+        >
+          <TouchableOpacity 
+            style={styles.modalOverlay}
+            activeOpacity={1}
+            onPress={() => setShowStatusDropdown(false)}
+          >
+            <View style={styles.monthDropdownContainer}>
+              <View style={styles.monthDropdownHeader}>
+                <Text style={styles.monthDropdownTitle}>Durum Seç</Text>
+                <TouchableOpacity 
+                  onPress={() => setShowStatusDropdown(false)}
+                  style={styles.monthDropdownClose}
+                >
+                  <Ionicons name="close-outline" size={24} color="#6b7280" />
+                </TouchableOpacity>
+              </View>
+              <ScrollView 
+                style={styles.monthDropdownScroll}
+                showsVerticalScrollIndicator={true}
+                indicatorStyle="default"
+              >
+                {['', 'Beklemede', 'Onaylandı', 'Reddedildi'].map((durum) => (
+                  <TouchableOpacity
+                    key={durum || 'all'}
+                    style={[
+                      styles.monthDropdownItem,
+                      (izinFilters.durum === durum || (durum === '' && izinFilters.durum === '')) && styles.monthDropdownItemSelected
+                    ]}
+                    onPress={() => {
+                      setIzinFilters({...izinFilters, durum});
+                      setShowStatusDropdown(false);
+                    }}
+                  >
+                    <Text style={[
+                      styles.monthDropdownItemText,
+                      (izinFilters.durum === durum || (durum === '' && izinFilters.durum === '')) && styles.monthDropdownItemTextSelected
+                    ]}>
+                      {durum || 'Tümü'}
+                    </Text>
+                    {(izinFilters.durum === durum || (durum === '' && izinFilters.durum === '')) && (
+                      <Ionicons name="checkmark-outline" size={20} color="#25b2ef" />
+                    )}
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+            </View>
+          </TouchableOpacity>
+        </Modal>
+      </View>
+    );
+  };
+
   const renderContent = () => {
     switch (activeSection) {
       case 'dashboard':
@@ -1615,7 +2233,7 @@ export default function AdminDashboardScreen({ navigation }: AdminDashboardScree
       case 'ozluk':
         return renderOzlukBelgeleri();
       case 'izin':
-        return renderComingSoon('📝 İzin Talepleri');
+        return renderIzinTalepleri();
       case 'duyuru':
         return renderComingSoon('📢 Duyurular');
       case 'kartlar':
@@ -1670,7 +2288,7 @@ export default function AdminDashboardScreen({ navigation }: AdminDashboardScree
                     case 'ozluk':
                       return renderOzlukBelgeleri();
                     case 'izin':
-                      return renderComingSoon('📝 İzin Talepleri');
+                      return renderIzinTalepleri();
                     case 'duyuru':
                       return renderComingSoon('📢 Duyurular');
                     case 'kartlar':
@@ -3170,6 +3788,192 @@ const styles = StyleSheet.create({
   compactDeleteText: {
     color: '#ef4444',
     fontSize: 11,
+    fontWeight: '600',
+  },
+
+  // İzin Talepleri Styles
+  filtersContainer: {
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  filterRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 12,
+  },
+  filterItem: {
+    flex: 1,
+    marginHorizontal: 4,
+  },
+  filterLabel: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#374151',
+    marginBottom: 4,
+  },
+  izinFilterButton: {
+    backgroundColor: '#f3f4f6',
+    borderRadius: 8,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderWidth: 1,
+    borderColor: '#d1d5db',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  izinFilterButtonText: {
+    fontSize: 12,
+    color: '#374151',
+    textAlign: 'center',
+  },
+  izinListContainer: {
+    flex: 1,
+  },
+  izinCard: {
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  izinHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  izinPersonelName: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#1f2937',
+    flex: 1,
+  },
+  izinDurumBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+  },
+  izinDurumText: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  izinDetails: {
+    marginBottom: 12,
+  },
+  izinDetailText: {
+    fontSize: 14,
+    color: '#4b5563',
+    marginBottom: 4,
+  },
+  izinDetailLabel: {
+    fontWeight: '600',
+    color: '#374151',
+  },
+  belgeButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#eff6ff',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+    alignSelf: 'flex-start',
+    marginTop: 4,
+  },
+  belgeButtonText: {
+    color: '#3b82f6',
+    fontSize: 12,
+    marginLeft: 4,
+  },
+  izinActions: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    gap: 8,
+  },
+  izinActionButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 8,
+    gap: 4,
+  },
+  approveButton: {
+    backgroundColor: '#22c55e',
+  },
+  rejectButton: {
+    backgroundColor: '#ef4444',
+  },
+  izinActionText: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+
+  // Month Dropdown Styles
+  monthDropdownContainer: {
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    width: width * 0.75,
+    maxHeight: 400,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 8,
+    elevation: 8,
+  },
+  monthDropdownHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#e5e7eb',
+    borderTopLeftRadius: 12,
+    borderTopRightRadius: 12,
+    backgroundColor: '#f9fafb',
+  },
+  monthDropdownTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#1f2937',
+  },
+  monthDropdownClose: {
+    padding: 4,
+  },
+  monthDropdownScroll: {
+    maxHeight: 300,
+  },
+  monthDropdownItem: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f3f4f6',
+  },
+  monthDropdownItemSelected: {
+    backgroundColor: '#eff6ff',
+  },
+  monthDropdownItemText: {
+    fontSize: 16,
+    color: '#374151',
+  },
+  monthDropdownItemTextSelected: {
+    color: '#25b2ef',
     fontWeight: '600',
   },
 

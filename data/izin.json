@@ -8,9 +8,10 @@
     "gun": 3,
     "gerekce": "Sağlık Sorunu",
     "belge": null,
-    "durum": "Onaylandı",
+    "durum": "Beklemede",
     "tarih": "2025-07-25T14:07:16.616Z",
-    "onayTarihi": "2025-07-25T14:07:20.623Z"
+    "onayTarihi": null,
+    "onaylayan": null
   },
   {
     "id": 1753452459713,
@@ -23,6 +24,7 @@
     "belge": null,
     "durum": "Beklemede",
     "tarih": "2025-07-25T14:07:39.713Z",
+    "onayTarihi": null,
     "onaylayan": null
   }
 ]
