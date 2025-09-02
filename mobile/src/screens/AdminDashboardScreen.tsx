@@ -22,11 +22,10 @@ import * as Sharing from 'expo-sharing';
 import { LinearGradient } from 'expo-linear-gradient';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Linking, Platform } from 'react-native';
-
-// API Base URL'i import et
-const API_BASE_URL = Platform.OS === 'android' ? 'http://192.168.1.128:3000' : 'http://localhost:3000';
-
 import Ionicons from 'react-native-vector-icons/Ionicons';
+
+// API Base URL'i services'den import et
+import { API_BASE_URL } from '../services/api';
 
 interface AdminDashboardScreenProps {
   navigation: any;
@@ -547,14 +546,7 @@ export default function AdminDashboardScreen({ navigation }: AdminDashboardScree
       formData.append('gorev', addForm.gorev.trim());
       formData.append('baslama', addForm.baslama);
 
-      console.log('Sending data:', {
-        ad: addForm.ad.trim(),
-        soyad: addForm.soyad.trim(),
-        egitim: addForm.egitim.trim(),
-        gorev: addForm.gorev.trim(),
-        baslama: addForm.baslama,
-        hasPhoto: !!addSelectedImage
-      });
+      // Personel ekleme verisi gönderiliyor
 
       if (addSelectedImage) {
         const filename = addSelectedImage.split('/').pop() || 'photo.jpg';
@@ -580,11 +572,10 @@ export default function AdminDashboardScreen({ navigation }: AdminDashboardScree
         loadStats();
       } else {
         const errorData = await response.text();
-        console.log('Server error:', response.status, errorData);
+
         Alert.alert('Hata', `Personel eklenemedi. HTTP ${response.status}: ${errorData || 'Bilinmeyen hata'}`);
       }
     } catch (error) {
-      console.log('Network error:', error);
       Alert.alert('Hata', `Ağ hatası: ${error instanceof Error ? error.message : 'Bilinmeyen hata'}`);
     }
   };
@@ -907,8 +898,6 @@ export default function AdminDashboardScreen({ navigation }: AdminDashboardScree
   const loadIletisimMesajlari = async () => {
     try {
       const token = await AsyncStorage.getItem('token');
-      console.log('Token:', token);
-      console.log('API URL:', `${API_BASE_URL}/api/iletisim`);
       
       const response = await fetch(`${API_BASE_URL}/api/iletisim`, {
         headers: { 
@@ -917,12 +906,8 @@ export default function AdminDashboardScreen({ navigation }: AdminDashboardScree
         }
       });
       
-      console.log('Response status:', response.status);
-      console.log('Response headers:', response.headers);
-      
       if (response.ok) {
         const data = await response.json();
-        console.log('İletişim data:', data);
         setIletisimMesajlari(data);
       } else {
         const errorText = await response.text();
