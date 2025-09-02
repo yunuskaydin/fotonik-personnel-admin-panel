@@ -90,6 +90,15 @@ interface DocumentFile {
   mimeType: string;
 }
 
+// Duyurular
+interface DuyuruItem {
+  id: number;
+  text: string;
+  image?: string | null;
+  video?: string | null;
+  createdAt: string;
+}
+
 const { width } = Dimensions.get('window');
 
 export default function AdminDashboardScreen({ navigation }: AdminDashboardScreenProps) {
@@ -121,6 +130,14 @@ export default function AdminDashboardScreen({ navigation }: AdminDashboardScree
   const [showYearDropdown, setShowYearDropdown] = useState(false);
   const [showPersonDropdown, setShowPersonDropdown] = useState(false);
   const [showStatusDropdown, setShowStatusDropdown] = useState(false);
+
+  // Duyurular state
+  const [duyurular, setDuyurular] = useState<DuyuruItem[]>([]);
+  const [duyuruModalVisible, setDuyuruModalVisible] = useState(false);
+  const [editingDuyuru, setEditingDuyuru] = useState<DuyuruItem | null>(null);
+  const [duyuruText, setDuyuruText] = useState('');
+  const [duyuruImage, setDuyuruImage] = useState<DocumentFile | null>(null);
+  const [duyuruVideo, setDuyuruVideo] = useState<DocumentFile | null>(null);
   const [editModalVisible, setEditModalVisible] = useState(false);
   const [editingPersonel, setEditingPersonel] = useState<Personel | null>(null);
   const [editForm, setEditForm] = useState({
@@ -212,6 +229,8 @@ export default function AdminDashboardScreen({ navigation }: AdminDashboardScree
     } else if (activeSection === 'izin') {
       loadIzinTalepleri();
       loadIzinTurleri();
+    } else if (activeSection === 'duyuru') {
+      loadDuyurular();
     }
     
     // Update page index when activeSection changes via bottom navigation
@@ -1082,6 +1101,95 @@ export default function AdminDashboardScreen({ navigation }: AdminDashboardScree
     }
   };
 
+  // Duyurular API
+  const loadDuyurular = async () => {
+    try {
+      const token = await AsyncStorage.getItem('token');
+      const res = await fetch(`${API_BASE_URL}/api/duyurular`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (res.ok) {
+        const list = await res.json();
+        setDuyurular(list);
+      }
+    } catch {}
+  };
+
+  const openDuyuruModal = (item?: DuyuruItem) => {
+    if (item) {
+      setEditingDuyuru(item);
+      setDuyuruText(item.text);
+    } else {
+      setEditingDuyuru(null);
+      setDuyuruText('');
+    }
+    setDuyuruImage(null);
+    setDuyuruVideo(null);
+    setDuyuruModalVisible(true);
+  };
+
+  const closeDuyuruModal = () => setDuyuruModalVisible(false);
+
+  const pickDuyuruImage = async () => {
+    const result = await DocumentPicker.getDocumentAsync({ type: ['image/*'] });
+    if (result.canceled) return;
+    const asset = (result as any).assets?.[0];
+    if (asset) {
+      setDuyuruImage({ uri: asset.uri, name: asset.name || 'image', size: asset.size || 0, mimeType: asset.mimeType || 'image/*' });
+    }
+  };
+
+  const pickDuyuruVideo = async () => {
+    const result = await DocumentPicker.getDocumentAsync({ type: ['video/*'] });
+    if (result.canceled) return;
+    const asset = (result as any).assets?.[0];
+    if (asset) {
+      setDuyuruVideo({ uri: asset.uri, name: asset.name || 'video', size: asset.size || 0, mimeType: asset.mimeType || 'video/*' });
+    }
+  };
+
+  const saveDuyuru = async () => {
+    try {
+      if (!duyuruText.trim() && !duyuruImage && !duyuruVideo) {
+        Alert.alert('Uyarı', 'Metin veya görsel/video ekleyin');
+        return;
+      }
+      const token = await AsyncStorage.getItem('token');
+      const form = new FormData();
+      form.append('text', duyuruText.trim());
+      if (duyuruImage) {
+        form.append('image', { uri: duyuruImage.uri, name: duyuruImage.name, type: duyuruImage.mimeType } as any);
+      }
+      if (duyuruVideo) {
+        form.append('video', { uri: duyuruVideo.uri, name: duyuruVideo.name, type: duyuruVideo.mimeType } as any);
+      }
+      const url = editingDuyuru ? `${API_BASE_URL}/api/duyurular/${editingDuyuru.id}` : `${API_BASE_URL}/api/duyurular`;
+      const method = editingDuyuru ? 'PUT' : 'POST';
+      const res = await fetch(url, { method, headers: { Authorization: `Bearer ${token}` }, body: form });
+      if (!res.ok) {
+        const err = await res.text().catch(() => '');
+        Alert.alert('Hata', `Duyuru kaydedilemedi (HTTP ${res.status})${err ? `\n${err}` : ''}`);
+        return;
+      }
+      closeDuyuruModal();
+      loadDuyurular();
+    } catch (e) {
+      Alert.alert('Hata', 'Duyuru kaydedilemedi');
+    }
+  };
+
+  const deleteDuyuru = async (id: number) => {
+    Alert.alert('Duyuruyu Sil', 'Silmek istiyor musunuz?', [
+      { text: 'İptal', style: 'cancel' },
+      { text: 'Sil', style: 'destructive', onPress: async () => {
+        const token = await AsyncStorage.getItem('token');
+        const res = await fetch(`${API_BASE_URL}/api/duyurular/${id}`, { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } });
+        if (!res.ok) return Alert.alert('Hata', 'Duyuru silinemedi');
+        loadDuyurular();
+      }}
+    ]);
+  };
+
   const confirmIzinStatusChange = (izinId: number, durum: 'Onaylandı' | 'Reddedildi' | 'Beklemede') => {
     const title = durum === 'Onaylandı' ? 'İzni Onayla' : durum === 'Reddedildi' ? 'İzni Reddet' : 'Durumu Geri Al';
     const message =
@@ -1111,6 +1219,66 @@ export default function AdminDashboardScreen({ navigation }: AdminDashboardScree
     } catch (error) {
       console.error('Kalan haklar yükleme hatası:', error);
       return {};
+    }
+  };
+
+  // Dosyayı indirip kullanıcıya açma uygulaması seçtir
+  const openUploadWithChooser = async (fileName: string) => {
+    try {
+      const url = `${API_BASE_URL}/uploads/${fileName}`;
+      const fileExt = (fileName.split('.').pop() || '').toLowerCase();
+      const mime = fileExt === 'jpg' || fileExt === 'jpeg' ? 'image/jpeg'
+        : fileExt === 'png' ? 'image/png'
+        : fileExt === 'gif' ? 'image/gif'
+        : fileExt === 'webp' ? 'image/webp'
+        : fileExt === 'mp4' ? 'video/mp4'
+        : fileExt === 'mov' ? 'video/quicktime'
+        : 'application/octet-stream';
+
+      const fileUri = FileSystem.cacheDirectory + fileName;
+      const dl = await FileSystem.downloadAsync(url, fileUri);
+      if (dl.status !== 200) {
+        Alert.alert('Hata', 'Dosya indirilemedi');
+        return;
+      }
+      Alert.alert(
+        'Dosya İşlemi',
+        'Ne yapmak istersiniz?',
+        [
+          {
+            text: 'Galeriye Kaydet',
+            onPress: async () => {
+              // İzin: yazma odaklı iste (iOS için writeOnly diyalogu)
+              const perm = await MediaLibrary.requestPermissionsAsync(true as any);
+              const granted = perm.granted || (perm as any).accessPrivileges === 'all';
+              if (!granted) {
+                Alert.alert('İzin Verilmedi', 'Galeriye kaydetmek için medya erişim izni gerekiyor.');
+                return;
+              }
+              try {
+                // iOS/Android için kitaplığa kaydet
+                await MediaLibrary.saveToLibraryAsync(dl.uri);
+                Alert.alert('Başarılı', 'Galeriye kaydedildi.');
+              } catch {
+                Alert.alert('Hata', 'Galeriye kaydedilemedi.');
+              }
+            }
+          },
+          {
+            text: 'Paylaş/Aç',
+            onPress: async () => {
+              try {
+                await Sharing.shareAsync(dl.uri, { mimeType: mime, dialogTitle: 'Uygulama seçin' });
+              } catch {
+                Alert.alert('Hata', 'Paylaşım açılamadı.');
+              }
+            }
+          },
+          { text: 'İptal', style: 'cancel' }
+        ]
+      );
+    } catch (e) {
+      Alert.alert('Hata', 'Dosya açılamadı');
     }
   };
 
@@ -2224,6 +2392,130 @@ export default function AdminDashboardScreen({ navigation }: AdminDashboardScree
     );
   };
 
+  const renderDuyurular = () => {
+    return (
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>📢 Duyurular</Text>
+
+        <View style={{ flexDirection: 'row', justifyContent: 'flex-end', marginBottom: 12 }}>
+          <TouchableOpacity style={[styles.izinActionButton, styles.approveButton]} onPress={() => openDuyuruModal()}>
+            <Ionicons name="add-circle-outline" size={18} color="#fff" />
+            <Text style={styles.izinActionText}>Yeni Duyuru</Text>
+          </TouchableOpacity>
+        </View>
+
+        <ScrollView style={styles.izinListContainer}>
+          {duyurular.length === 0 ? (
+            <View style={styles.emptyContainer}>
+              <Ionicons name="megaphone-outline" size={40} color="#ccc" />
+              <Text style={styles.emptyText}>Duyuru bulunamadı</Text>
+            </View>
+          ) : (
+            duyurular.map(d => (
+              <View key={d.id} style={styles.izinCard}>
+                <Text style={styles.izinPersonelName}>{d.text}</Text>
+                {(d.image || d.video) && (
+                  <View style={{ flexDirection: 'row', gap: 8, marginTop: 8, alignItems: 'stretch' }}>
+                    {d.image ? (
+                      <TouchableOpacity
+                        onPress={() => openUploadWithChooser(d.image!)}
+                        style={{ flex: 1 }}
+                        activeOpacity={0.85}
+                      >
+                        <Image
+                          source={{ uri: `${API_BASE_URL}/uploads/${d.image}` }}
+                          style={{ width: '100%', height: 180, borderRadius: 8 }}
+                          resizeMode="cover"
+                        />
+                      </TouchableOpacity>
+                    ) : null}
+                    {d.video ? (
+                      <TouchableOpacity
+                        onPress={() => openUploadWithChooser(d.video!)}
+                        style={{ flex: 1, height: 180, borderRadius: 8, borderWidth: 1, borderColor: '#e5e7eb', alignItems: 'center', justifyContent: 'center', backgroundColor: '#f9fafb' }}
+                      >
+                        <Ionicons name="play-circle-outline" size={42} color="#3b82f6" />
+                        <Text style={{ color: '#6b7280', marginTop: 6 }} numberOfLines={1}>
+                          {d.video}
+                        </Text>
+                        <Text style={{ color: '#3b82f6', marginTop: 2, fontWeight: '600' }}>Videoyu Aç</Text>
+                      </TouchableOpacity>
+                    ) : null}
+                  </View>
+                )}
+                <Text style={{ color: '#9ca3af', fontSize: 12, marginTop: 6 }}>{new Date(d.createdAt).toLocaleString()}</Text>
+
+                <View style={[styles.izinActions, { marginTop: 10 }]}>
+                  <TouchableOpacity style={[styles.izinActionButton, styles.approveButton]} onPress={() => openDuyuruModal(d)}>
+                    <Ionicons name="create-outline" size={16} color="#fff" />
+                    <Text style={styles.izinActionText}>Düzenle</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={[styles.izinActionButton, styles.rejectButton]} onPress={() => deleteDuyuru(d.id)}>
+                    <Ionicons name="trash-outline" size={16} color="#fff" />
+                    <Text style={styles.izinActionText}>Sil</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            ))
+          )}
+        </ScrollView>
+
+        <Modal visible={duyuruModalVisible} transparent animationType="slide" onRequestClose={closeDuyuruModal}>
+          <View style={styles.modalOverlay}>
+            <View style={styles.modalContainer}>
+              <View style={styles.modalHeader}>
+                <Text style={styles.modalTitle}>{editingDuyuru ? 'Duyuruyu Düzenle' : 'Yeni Duyuru'}</Text>
+                <TouchableOpacity onPress={closeDuyuruModal}><Ionicons name="close-outline" size={28} color="#6b7280" /></TouchableOpacity>
+              </View>
+              <ScrollView 
+                style={{ padding: 12, maxHeight: 420 }}
+                contentContainerStyle={{ paddingBottom: 12 }}
+                keyboardShouldPersistTaps="handled"
+                nestedScrollEnabled
+                showsVerticalScrollIndicator
+              >
+                <TextInput
+                  value={duyuruText}
+                  onChangeText={setDuyuruText}
+                  placeholder="Duyuru metni"
+                  style={{ borderWidth: 1, borderColor: '#e5e7eb', borderRadius: 8, padding: 10, minHeight: 100, maxHeight: 260, textAlignVertical: 'top' }}
+                  multiline
+                  scrollEnabled
+                />
+                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 10 }}>
+                  <View style={{ flexDirection: 'row', gap: 8 }}>
+                    <TouchableOpacity style={styles.downloadButton} onPress={pickDuyuruImage}>
+                      <Ionicons name="image-outline" size={18} color="#fff" />
+                    </TouchableOpacity>
+                    <TouchableOpacity style={styles.downloadButton} onPress={pickDuyuruVideo}>
+                      <Ionicons name="videocam-outline" size={18} color="#fff" />
+                    </TouchableOpacity>
+                  </View>
+                  <View style={{ flexDirection: 'row', gap: 8 }}>
+                    <TouchableOpacity style={[styles.izinActionButton, styles.rejectButton]} onPress={closeDuyuruModal}>
+                      <Ionicons name="close-circle-outline" size={16} color="#fff" />
+                      <Text style={styles.izinActionText}>İptal</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity style={[styles.izinActionButton, styles.approveButton]} onPress={saveDuyuru}>
+                      <Ionicons name="save-outline" size={16} color="#fff" />
+                      <Text style={styles.izinActionText}>Kaydet</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+                {(duyuruImage || duyuruVideo) && (
+                  <Text style={{ color: '#6b7280', fontSize: 12, marginTop: 6 }}>
+                    Ek: {duyuruImage?.name || duyuruVideo?.name}
+                  </Text>
+                )}
+                
+              </ScrollView>
+            </View>
+          </View>
+        </Modal>
+      </View>
+    );
+  };
+
   const renderContent = () => {
     switch (activeSection) {
       case 'dashboard':
@@ -2235,7 +2527,7 @@ export default function AdminDashboardScreen({ navigation }: AdminDashboardScree
       case 'izin':
         return renderIzinTalepleri();
       case 'duyuru':
-        return renderComingSoon('📢 Duyurular');
+        return renderDuyurular();
       case 'kartlar':
         return renderComingSoon('🗂️ Üretim Kartları');
       case 'raporlar':
@@ -2290,7 +2582,7 @@ export default function AdminDashboardScreen({ navigation }: AdminDashboardScree
                     case 'izin':
                       return renderIzinTalepleri();
                     case 'duyuru':
-                      return renderComingSoon('📢 Duyurular');
+                      return renderDuyurular();
                     case 'kartlar':
                       return renderComingSoon('🗂️ Üretim Kartları');
                     case 'raporlar':

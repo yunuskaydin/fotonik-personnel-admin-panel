@@ -13,14 +13,21 @@
       "backgroundColor": "#234060"
     },
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "infoPlist": {
+        "NSPhotoLibraryAddUsageDescription": "Duyuru görsellerini/vidyolarını galerinize kaydedebilmemiz için fotoğraf arşivinize ekleme izni gerekli."
+      }
     },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/fotonik-logo.png",
         "backgroundColor": "#234060"
       },
-      "edgeToEdgeEnabled": true
+      "edgeToEdgeEnabled": true,
+      "permissions": [
+        "READ_MEDIA_IMAGES",
+        "READ_MEDIA_VIDEO"
+      ]
     },
     "web": {
       "favicon": "./assets/fotonik-logo.png"
