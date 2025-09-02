@@ -204,13 +204,14 @@ export default function AdminDashboardScreen({ navigation }: AdminDashboardScree
       loadStatsQuiet();
     }
 
-    if (activeSection === 'personel') {
+    const sectionNow = menuItems[currentPageIndex]?.id;
+    if (sectionNow === 'personel') {
       if (isFirstLoad) {
         loadPersoneller();
       } else {
         loadPersonellerQuiet();
       }
-    } else if (activeSection === 'ozluk') {
+    } else if (sectionNow === 'ozluk') {
       // Reset özlük states when entering özlük section
       setSelectedPersonelId(null);
       setSelectedDocumentType('');
@@ -224,22 +225,22 @@ export default function AdminDashboardScreen({ navigation }: AdminDashboardScree
       } else {
         loadPersonellerQuiet();
       }
-    } else if (activeSection === 'iletisim') {
+    } else if (sectionNow === 'iletisim') {
       loadIletisimMesajlari();
-    } else if (activeSection === 'izin') {
+    } else if (sectionNow === 'izin') {
       loadIzinTalepleri();
       loadIzinTurleri();
-    } else if (activeSection === 'duyuru') {
+    } else if (sectionNow === 'duyuru') {
       loadDuyurular();
     }
     
     // Update page index when activeSection changes via bottom navigation
-    const pageIndex = menuItems.findIndex(item => item.id === activeSection);
+    const pageIndex = currentPageIndex;
     if (pageIndex !== -1 && pageIndex !== currentPageIndex) {
       setCurrentPageIndex(pageIndex);
       scrollToPage(pageIndex);
     }
-  }, [activeSection]);
+  }, [currentPageIndex]);
 
   useEffect(() => {
     if (selectedPersonelId && activeSection === 'ozluk') {
@@ -1510,10 +1511,9 @@ export default function AdminDashboardScreen({ navigation }: AdminDashboardScree
   const handleScroll = (event: any) => {
     const contentOffsetX = event.nativeEvent.contentOffset.x;
     const pageIndex = Math.round(contentOffsetX / width);
-    
     if (pageIndex !== currentPageIndex && pageIndex >= 0 && pageIndex < menuItems.length) {
       setCurrentPageIndex(pageIndex);
-      setActiveSection(menuItems[pageIndex].id);
+      // setActiveSection tetiklemesini kaldırıyoruz; aktif görünüm currentPageIndex üzerinden belirleniyor
     }
   };
 
@@ -2601,20 +2601,20 @@ export default function AdminDashboardScreen({ navigation }: AdminDashboardScree
         {/* Bottom Tab Navigation */}
         <View style={[styles.bottomTabContainer, { paddingBottom: Math.max(insets.bottom, 5) + 8 }]}>
           <View style={styles.bottomTabContent}>
-            {menuItems.map((item) => (
+            {menuItems.map((item, index) => (
               <TouchableOpacity
                 key={item.id}
                 style={styles.bottomTabItem}
                 onPress={() => {
                   const pageIndex = menuItems.findIndex(menuItem => menuItem.id === item.id);
-                  setActiveSection(item.id);
+                  // Sadece sayfaya kaydır; aktif sekmeyi scroll eventi belirlesin
                   scrollToPage(pageIndex);
                 }}
               >
                 <Ionicons 
                   name={item.icon as any} 
                   size={22} 
-                  color={activeSection === item.id ? '#25b2ef' : '#8a9ba8'} 
+                  color={currentPageIndex === index ? '#25b2ef' : '#8a9ba8'} 
                 />
               </TouchableOpacity>
             ))}
