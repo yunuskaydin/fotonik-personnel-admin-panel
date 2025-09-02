@@ -9,11 +9,17 @@ import {
   Alert,
   RefreshControl,
   Dimensions,
+  Linking,
+  Image,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { API_BASE_URL } from '../services/api';
+import * as FileSystem from 'expo-file-system';
+import * as Sharing from 'expo-sharing';
+import * as MediaLibrary from 'expo-media-library';
 
 interface PersonelDashboardScreenProps {
   navigation: any;
@@ -25,15 +31,30 @@ interface PersonelData {
   email: string;
 }
 
+interface DuyuruItem {
+  id: number;
+  text: string;
+  image?: string | null;
+  video?: string | null;
+  createdAt: string;
+}
+
 export default function PersonelDashboardScreen({ navigation }: PersonelDashboardScreenProps) {
   const insets = useSafeAreaInsets();
   const [loading, setLoading] = useState(false);
   const [activeSection, setActiveSection] = useState('home');
   const [personelData, setPersonelData] = useState<PersonelData | null>(null);
+  const [duyurular, setDuyurular] = useState<DuyuruItem[]>([]);
 
   useEffect(() => {
     loadPersonelData();
   }, []);
+
+  useEffect(() => {
+    if (activeSection === 'duyuru') {
+      loadDuyurular();
+    }
+  }, [activeSection]);
 
   const loadPersonelData = async () => {
     setLoading(true);
@@ -106,6 +127,75 @@ export default function PersonelDashboardScreen({ navigation }: PersonelDashboar
         soyad: 'Kullanıcı',
         email: 'Belirtilmemiş'
       });
+    }
+  };
+
+  const loadDuyurular = async () => {
+    try {
+      const token = await AsyncStorage.getItem('token');
+      const res = await fetch(`${API_BASE_URL}/api/duyurular`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+      });
+      if (res.ok) {
+        const list = await res.json();
+        setDuyurular(list);
+      }
+    } catch {}
+  };
+
+  // Dosyayı indirip paylaş/galeri seçenekleri sun
+  const openUploadWithChooser = async (fileName: string) => {
+    try {
+      const url = `${API_BASE_URL}/uploads/${fileName}`;
+      const ext = (fileName.split('.').pop() || '').toLowerCase();
+      const mime = ext === 'jpg' || ext === 'jpeg' ? 'image/jpeg'
+        : ext === 'png' ? 'image/png'
+        : ext === 'gif' ? 'image/gif'
+        : ext === 'webp' ? 'image/webp'
+        : ext === 'mp4' ? 'video/mp4'
+        : ext === 'mov' ? 'video/quicktime'
+        : 'application/octet-stream';
+
+      const target = FileSystem.cacheDirectory + fileName;
+      const dl = await FileSystem.downloadAsync(url, target);
+      if (dl.status !== 200) return Alert.alert('Hata', 'Dosya indirilemedi');
+
+      Alert.alert(
+        'Dosya İşlemi',
+        'Ne yapmak istersiniz?',
+        [
+          {
+            text: 'Galeriye Kaydet',
+            onPress: async () => {
+              const perm = await MediaLibrary.requestPermissionsAsync(true as any);
+              const granted = (perm as any).granted || (perm as any).accessPrivileges === 'all';
+              if (!granted) {
+                Alert.alert('İzin Verilmedi', 'Galeriye kaydetmek için izin gerekiyor.');
+                return;
+              }
+              try {
+                await MediaLibrary.saveToLibraryAsync(dl.uri);
+                Alert.alert('Başarılı', 'Galeriye kaydedildi.');
+              } catch {
+                Alert.alert('Hata', 'Galeriye kaydedilemedi.');
+              }
+            }
+          },
+          {
+            text: 'Paylaş/Aç',
+            onPress: async () => {
+              try {
+                await Sharing.shareAsync(dl.uri, { mimeType: mime, dialogTitle: 'Uygulama seçin' });
+              } catch {
+                Alert.alert('Hata', 'Paylaşım açılamadı.');
+              }
+            }
+          },
+          { text: 'İptal', style: 'cancel' }
+        ]
+      );
+    } catch (e) {
+      Alert.alert('Hata', 'Dosya açılamadı');
     }
   };
 
@@ -191,6 +281,44 @@ export default function PersonelDashboardScreen({ navigation }: PersonelDashboar
     </View>
   );
 
+  const renderDuyurular = () => (
+    <View style={styles.section}>
+      <Text style={styles.sectionTitle}>📢 Duyurular</Text>
+      {duyurular.length === 0 ? (
+        <View style={styles.comingSoonContainer}>
+          <Ionicons name="megaphone-outline" size={60} color="#154373" />
+          <Text style={styles.comingSoonText}>Henüz duyuru yok</Text>
+        </View>
+      ) : (
+        duyurular.map((d) => (
+          <View key={d.id} style={styles.actionCard}>
+            <Text style={{ fontSize: 16, fontWeight: '600', color: '#0e2a47' }}>{d.text}</Text>
+            {(d.image || d.video) && (
+              <View style={{ flexDirection: 'row', gap: 8, marginTop: 10, alignItems: 'stretch' }}>
+                {d.image ? (
+                  <TouchableOpacity onPress={() => openUploadWithChooser(d.image!)} style={{ flex: 1 }} activeOpacity={0.85}>
+                    <Image
+                      source={{ uri: `${API_BASE_URL}/uploads/${d.image}` }}
+                      style={{ width: '100%', height: 180, borderRadius: 8, backgroundColor: '#fff' }}
+                      resizeMode="cover"
+                    />
+                  </TouchableOpacity>
+                ) : null}
+                {d.video ? (
+                  <TouchableOpacity onPress={() => openUploadWithChooser(d.video!)} style={{ flex: 1, height: 180, borderRadius: 8, borderWidth: 1, borderColor: '#e5e7eb', alignItems: 'center', justifyContent: 'center', backgroundColor: '#f9fafb' }}>
+                    <Ionicons name="play-circle-outline" size={36} color="#25b2ef" />
+                    <Text numberOfLines={1} style={{ color: '#6b7280', marginTop: 4 }}>{d.video}</Text>
+                  </TouchableOpacity>
+                ) : null}
+              </View>
+            )}
+            <Text style={{ color: '#6b7280', fontSize: 12, marginTop: 8 }}>{new Date(d.createdAt).toLocaleString()}</Text>
+          </View>
+        ))
+      )}
+    </View>
+  );
+
   const renderContent = () => {
     switch (activeSection) {
       case 'home':
@@ -202,7 +330,7 @@ export default function PersonelDashboardScreen({ navigation }: PersonelDashboar
       case 'izin':
         return renderComingSoon('İzin Talepleri', '📝');
       case 'duyuru':
-        return renderComingSoon('Duyurular', '📢');
+        return renderDuyurular();
       case 'iletisim':
         return renderComingSoon('Görüş/Öneri/Şikayet', '💬');
       default:

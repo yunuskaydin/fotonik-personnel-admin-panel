@@ -5,6 +5,13 @@
     "image": "1756822230735.png",
     "video": null,
     "createdAt": "2025-09-02T14:10:30.754Z",
-    "readers": []
+    "readers": [
+      {
+        "userId": 1756470781205,
+        "ad": "Yunus Kağan",
+        "soyad": "AYDIN",
+        "date": "2025-09-02T15:24:28.530Z"
+      }
+    ]
   }
 ]
