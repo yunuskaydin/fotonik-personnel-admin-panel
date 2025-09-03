@@ -243,10 +243,10 @@ export default function AdminDashboardScreen({ navigation }: AdminDashboardScree
   }, [currentPageIndex]);
 
   useEffect(() => {
-    if (selectedPersonelId && activeSection === 'ozluk') {
+    if (selectedPersonelId && currentPageIndex === 2) { // 2 = özlük sekmesi
       loadOzlukBelgeleri(selectedPersonelId);
     }
-  }, [selectedPersonelId]);
+  }, [selectedPersonelId, currentPageIndex]);
 
   const loadStats = async () => {
     setLoading(true);
