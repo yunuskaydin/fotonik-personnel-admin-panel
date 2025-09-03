@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -71,6 +71,10 @@ export default function PersonelDashboardScreen({ navigation }: PersonelDashboar
   const insets = useSafeAreaInsets();
   const [loading, setLoading] = useState(false);
   const [activeSection, setActiveSection] = useState('home');
+  
+  // Swipe navigation refs
+  const scrollViewRef = useRef<ScrollView>(null);
+  const [currentPageIndex, setCurrentPageIndex] = useState(0);
   const [personelData, setPersonelData] = useState<PersonelData | null>(null);
   const [duyurular, setDuyurular] = useState<DuyuruItem[]>([]);
   const [iletisimForm, setIletisimForm] = useState<IletisimForm>({ tur: '', mesaj: '' });
@@ -96,13 +100,15 @@ export default function PersonelDashboardScreen({ navigation }: PersonelDashboar
   }, []);
 
   useEffect(() => {
-    if (activeSection === 'duyuru') {
+    const sectionNow = menuItems[currentPageIndex]?.id;
+    if (sectionNow === 'duyuru') {
       loadDuyurular();
     }
-    if (activeSection === 'izin') {
+    if (sectionNow === 'izin') {
       loadIzinData();
     }
-  }, [activeSection]);
+    setActiveSection(sectionNow || 'home');
+  }, [currentPageIndex]);
 
   const loadPersonelData = async () => {
     setLoading(true);
@@ -419,6 +425,22 @@ export default function PersonelDashboardScreen({ navigation }: PersonelDashboar
     { id: 'duyuru', title: 'Duyurular', icon: 'megaphone-outline', emoji: '📢' },
     { id: 'iletisim', title: 'Görüş/Öneri/Şikayet', icon: 'chatbubble-outline', emoji: '💬' },
   ];
+
+  // Swipe navigation functions
+  const handleScroll = (event: any) => {
+    const contentOffsetX = event.nativeEvent.contentOffset.x;
+    const pageIndex = Math.round(contentOffsetX / width);
+    if (pageIndex !== currentPageIndex && pageIndex >= 0 && pageIndex < menuItems.length) {
+      setCurrentPageIndex(pageIndex);
+    }
+  };
+
+  const scrollToPage = (pageIndex: number) => {
+    scrollViewRef.current?.scrollTo({
+      x: pageIndex * width,
+      animated: true,
+    });
+  };
 
   const renderHome = () => (
     <View style={styles.section}>
@@ -817,24 +839,7 @@ export default function PersonelDashboardScreen({ navigation }: PersonelDashboar
     </View>
   );
 
-  const renderContent = () => {
-    switch (activeSection) {
-      case 'home':
-        return renderHome();
-      case 'work':
-        return renderComingSoon('Üretim İşleri', '🔧');
-      case 'history':
-        return renderComingSoon('Geçmiş', '📜');
-      case 'izin':
-        return renderIzin();
-      case 'duyuru':
-        return renderDuyurular();
-      case 'iletisim':
-        return renderIletisim();
-      default:
-        return renderHome();
-    }
-  };
+
 
   return (
     <SafeAreaView style={styles.container}>
@@ -849,17 +854,47 @@ export default function PersonelDashboardScreen({ navigation }: PersonelDashboar
           </TouchableOpacity>
         </View>
 
-        {/* Content */}
+        {/* Swipeable Content */}
         <ScrollView
-          style={styles.content}
-          contentContainerStyle={{ paddingBottom: (Math.max(insets.bottom, 5) + 8) + 72 }}
-          refreshControl={
-            <RefreshControl refreshing={loading} onRefresh={loadPersonelData} />
-          }
+          ref={scrollViewRef}
+          horizontal
+          pagingEnabled
+          showsHorizontalScrollIndicator={false}
+          onMomentumScrollEnd={handleScroll}
+          style={styles.swipeContainer}
         >
-          {renderContent()}
-          {renderCalendarModal('start')}
-          {renderCalendarModal('end')}
+          {menuItems.map((item, index) => (
+            <View key={item.id} style={[styles.pageContainer, { width }]}>
+              <ScrollView
+                style={styles.content}
+                contentContainerStyle={{ paddingBottom: (Math.max(insets.bottom, 5) + 8) + 72 }}
+                refreshControl={
+                  <RefreshControl refreshing={loading} onRefresh={loadPersonelData} />
+                }
+              >
+                {(() => {
+                  switch (item.id) {
+                    case 'home':
+                      return renderHome();
+                    case 'work':
+                      return renderComingSoon('Üretim İşleri', '🔧');
+                    case 'history':
+                      return renderComingSoon('Geçmiş', '📜');
+                    case 'izin':
+                      return renderIzin();
+                    case 'duyuru':
+                      return renderDuyurular();
+                    case 'iletisim':
+                      return renderIletisim();
+                    default:
+                      return renderHome();
+                  }
+                })()}
+                {renderCalendarModal('start')}
+                {renderCalendarModal('end')}
+              </ScrollView>
+            </View>
+          ))}
         </ScrollView>
 
         {/* Bottom Tab Navigation */}
@@ -870,16 +905,19 @@ export default function PersonelDashboardScreen({ navigation }: PersonelDashboar
             contentContainerStyle={styles.bottomTabContent}
             style={styles.bottomTabScroll}
           >
-            {menuItems.map((item) => (
+            {menuItems.map((item, index) => (
               <TouchableOpacity
                 key={item.id}
                 style={styles.bottomTabItem}
-                onPress={() => setActiveSection(item.id)}
+                onPress={() => {
+                  const pageIndex = menuItems.findIndex(menuItem => menuItem.id === item.id);
+                  scrollToPage(pageIndex);
+                }}
               >
                 <Ionicons 
                   name={item.icon as any} 
                   size={26} 
-                  color={activeSection === item.id ? '#25b2ef' : '#8a9ba8'} 
+                  color={currentPageIndex === index ? '#25b2ef' : '#8a9ba8'} 
                 />
               </TouchableOpacity>
             ))}
@@ -921,6 +959,12 @@ const styles = StyleSheet.create({
     padding: 8,
     borderRadius: 8,
     backgroundColor: 'rgba(255,255,255,0.1)',
+  },
+  swipeContainer: {
+    flex: 1,
+  },
+  pageContainer: {
+    flex: 1,
   },
   content: {
     flex: 1,
