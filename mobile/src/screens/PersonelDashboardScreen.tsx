@@ -12,6 +12,8 @@ import {
   Linking,
   Image,
   TextInput,
+  Platform,
+  Modal,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -21,6 +23,7 @@ import { API_BASE_URL } from '../services/api';
 import * as FileSystem from 'expo-file-system';
 import * as Sharing from 'expo-sharing';
 import * as MediaLibrary from 'expo-media-library';
+import * as DocumentPicker from 'expo-document-picker';
 
 interface PersonelDashboardScreenProps {
   navigation: any;
@@ -45,6 +48,25 @@ interface IletisimForm {
   mesaj: string;
 }
 
+interface IzinTur {
+  key: string;
+  ad: string;
+  toplam: number;
+}
+
+interface IzinItem {
+  id: number;
+  personelId: number | string;
+  tur: string;
+  baslangic: string;
+  bitis: string;
+  gun?: number;
+  gerekce?: string;
+  belge?: string | null;
+  durum?: string;
+  tarih?: string;
+}
+
 export default function PersonelDashboardScreen({ navigation }: PersonelDashboardScreenProps) {
   const insets = useSafeAreaInsets();
   const [loading, setLoading] = useState(false);
@@ -52,6 +74,22 @@ export default function PersonelDashboardScreen({ navigation }: PersonelDashboar
   const [personelData, setPersonelData] = useState<PersonelData | null>(null);
   const [duyurular, setDuyurular] = useState<DuyuruItem[]>([]);
   const [iletisimForm, setIletisimForm] = useState<IletisimForm>({ tur: '', mesaj: '' });
+  const [izinTurleri] = useState<IzinTur[]>([
+    { key: 'yillik',   ad: 'Yıllık Ücretli İzin', toplam: 14 },
+    { key: 'ucretsiz', ad: 'Ücretsiz İzin',       toplam: 30 },
+    { key: 'mazeret',  ad: 'Mazeret İzni',        toplam: 7 },
+    { key: 'rapor',    ad: 'Sağlık Raporu',       toplam: 20 },
+  ]);
+  const [kalanHak, setKalanHak] = useState<Record<string, number>>({});
+  const [izinForm, setIzinForm] = useState({ tur: '', neden: '', baslangic: '', bitis: '' });
+  const [izinler, setIzinler] = useState<IzinItem[]>([]);
+  const [izinLoading, setIzinLoading] = useState(false);
+  const [izinTurOpen, setIzinTurOpen] = useState(false);
+  const [izinTurModalVisible, setIzinTurModalVisible] = useState(false);
+  const [belge, setBelge] = useState<{ uri: string; name: string; type?: string } | null>(null);
+  const [showStartCalendar, setShowStartCalendar] = useState(false);
+  const [showEndCalendar, setShowEndCalendar] = useState(false);
+  const [tempCal, setTempCal] = useState({ year: new Date().getFullYear(), month: new Date().getMonth() + 1, day: new Date().getDate() });
 
   useEffect(() => {
     loadPersonelData();
@@ -60,6 +98,9 @@ export default function PersonelDashboardScreen({ navigation }: PersonelDashboar
   useEffect(() => {
     if (activeSection === 'duyuru') {
       loadDuyurular();
+    }
+    if (activeSection === 'izin') {
+      loadIzinData();
     }
   }, [activeSection]);
 
@@ -182,6 +223,116 @@ export default function PersonelDashboardScreen({ navigation }: PersonelDashboar
     } catch (error) {
       console.error('İletişim hatası:', error);
       Alert.alert('Hata', 'Bağlantı hatası oluştu.');
+    }
+  };
+
+  const loadIzinData = async () => {
+    try {
+      setIzinLoading(true);
+      const token = await AsyncStorage.getItem('token');
+      // kalan haklar
+      try {
+        const resK = await fetch(`${API_BASE_URL}/api/izin/kalan`, {
+          headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+        });
+        if (resK.ok) {
+          const kalan = await resK.json();
+          // kalan objesi { "Yıllık Ücretli İzin": 12, ... }
+          const map: Record<string, number> = {};
+          izinTurleri.forEach(t => {
+            const val = typeof kalan[t.ad] === 'number' ? kalan[t.ad] : t.toplam;
+            map[t.key] = val;
+          });
+          setKalanHak(map);
+        }
+      } catch {}
+      // izin listesi (kişiye özel dönüyor)
+      try {
+        const resL = await fetch(`${API_BASE_URL}/api/izin`, {
+          headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+        });
+        if (resL.ok) {
+          const list = await resL.json();
+          setIzinler(list);
+        } else {
+          setIzinler([]);
+        }
+      } catch {
+        setIzinler([]);
+      }
+    } finally {
+      setIzinLoading(false);
+    }
+  };
+
+  const sendIzin = async () => {
+    try {
+      const token = await AsyncStorage.getItem('token');
+      if (!token) return;
+      if (!izinForm.tur || !izinForm.neden.trim() || !izinForm.baslangic || !izinForm.bitis) {
+        Alert.alert('Hata', 'Lütfen tüm alanları doldurun.');
+        return;
+      }
+      const fd = new FormData();
+      fd.append('tur', izinForm.tur as any);
+      fd.append('neden', izinForm.neden as any);
+      fd.append('baslangic', izinForm.baslangic as any);
+      fd.append('bitis', izinForm.bitis as any);
+      const res = await fetch(`${API_BASE_URL}/api/izin`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+        body: (() => {
+          if (belge) {
+            const file: any = {
+              uri: belge.uri,
+              name: belge.name,
+              type: belge.type || 'application/octet-stream',
+            };
+            (fd as any).append('belge', file);
+          }
+          return fd as any;
+        })(),
+      });
+      if (res.ok) {
+        Alert.alert('Başarılı', 'İzin talebiniz kaydedildi.');
+        setIzinForm({ tur: '', neden: '', baslangic: '', bitis: '' });
+        setBelge(null);
+        loadIzinData();
+      } else {
+        const err = await res.json().catch(() => ({ message: 'Hata oluştu.' }));
+        Alert.alert('Hata', err.message || 'İzin talebi gönderilemedi.');
+      }
+    } catch (e) {
+      Alert.alert('Hata', 'Bağlantı hatası oluştu.');
+    }
+  };
+
+  // Calendar helpers
+  const getDaysInMonth = (year: number, month: number) => new Date(year, month, 0).getDate();
+  const getFirstDayOfMonth = (year: number, month: number) => new Date(year, month - 1, 1).getDay();
+  const getMonthName = (month: number) => ['Ocak','Şubat','Mart','Nisan','Mayıs','Haziran','Temmuz','Ağustos','Eylül','Ekim','Kasım','Aralık'][month - 1];
+  const formatYmd = (y: number, m: number, d: number) => `${y}-${String(m).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+  const openCalendar = (type: 'start'|'end') => {
+    const current = type === 'start' ? izinForm.baslangic : izinForm.bitis;
+    if (current && /^\d{4}-\d{2}-\d{2}$/.test(current)) {
+      const [y,m,d] = current.split('-').map(v=>parseInt(v,10));
+      setTempCal({ year: y, month: m, day: d });
+    } else {
+      const now = new Date();
+      setTempCal({ year: now.getFullYear(), month: now.getMonth()+1, day: now.getDate() });
+    }
+    if (type==='start') setShowStartCalendar(true); else setShowEndCalendar(true);
+  };
+  const pickDate = (type: 'start'|'end', y: number, m: number, d: number) => {
+    const val = formatYmd(y,m,d);
+    if (type==='start') {
+      setIzinForm({ ...izinForm, baslangic: val });
+      setShowStartCalendar(false);
+    } else {
+      setIzinForm({ ...izinForm, bitis: val });
+      setShowEndCalendar(false);
     }
   };
 
@@ -361,6 +512,246 @@ export default function PersonelDashboardScreen({ navigation }: PersonelDashboar
     </View>
   );
 
+  const renderIzin = () => (
+    <View style={styles.section}>
+      <Text style={styles.sectionTitle}>📝 İzin Talepleri</Text>
+
+      <View style={styles.actionCard}>
+        <Text style={{ fontSize: 16, fontWeight: '600', color: '#0e2a47', marginBottom: 12 }}>
+          Yeni İzin Talebi
+        </Text>
+
+        <Text style={{ fontSize: 14, fontWeight: '500', color: '#374151', marginBottom: 8 }}>İzin Türü</Text>
+        <View style={styles.dropdownContainer}>
+          <TouchableOpacity
+            style={styles.dropdownSelect}
+            onPress={() => setIzinTurModalVisible(true)}
+            activeOpacity={0.8}
+          >
+            <Text style={styles.dropdownSelectedText} numberOfLines={1}>
+              {izinForm.tur
+                ? `${(izinTurleri.find(t => t.key === izinForm.tur)?.ad) || ''} (Kalan: ${(kalanHak[izinForm.tur] ?? izinTurleri.find(t => t.key === izinForm.tur)?.toplam) ?? ''} gün)`
+                : 'Lütfen seçiniz'}
+            </Text>
+            <Ionicons name={'chevron-down-outline'} size={18} color="#6b7280" />
+          </TouchableOpacity>
+        </View>
+
+        {/* İzin Türü Modal (Admin yıl/ay seçici stilinde) */}
+        <Modal
+          visible={izinTurModalVisible}
+          transparent={true}
+          animationType="fade"
+          onRequestClose={() => setIzinTurModalVisible(false)}
+        >
+          <TouchableOpacity 
+            style={styles.modalOverlay}
+            activeOpacity={1}
+            onPress={() => setIzinTurModalVisible(false)}
+          >
+            <View style={styles.monthDropdownContainer}>
+              <View style={styles.monthDropdownHeader}>
+                <Text style={styles.monthDropdownTitle}>İzin Türü Seç</Text>
+                <TouchableOpacity 
+                  onPress={() => setIzinTurModalVisible(false)}
+                  style={styles.monthDropdownClose}
+                >
+                  <Ionicons name="close-outline" size={24} color="#6b7280" />
+                </TouchableOpacity>
+              </View>
+              <ScrollView 
+                style={styles.monthDropdownScroll}
+                showsVerticalScrollIndicator={true}
+                indicatorStyle="default"
+              >
+                <TouchableOpacity
+                  style={[styles.monthDropdownItem, !izinForm.tur && styles.monthDropdownItemSelected]}
+                  onPress={() => { setIzinForm({ ...izinForm, tur: '' }); setIzinTurModalVisible(false); }}
+                >
+                  <Text style={[styles.monthDropdownItemText, !izinForm.tur && styles.monthDropdownItemTextSelected]}>Lütfen seçiniz</Text>
+                  {!izinForm.tur && (
+                    <Ionicons name="checkmark-outline" size={20} color="#25b2ef" />
+                  )}
+                </TouchableOpacity>
+                {izinTurleri.map((t) => {
+                  const kalan = (kalanHak[t.key] ?? t.toplam);
+                  const selected = izinForm.tur === t.key;
+                  return (
+                    <TouchableOpacity
+                      key={t.key}
+                      style={[styles.monthDropdownItem, selected && styles.monthDropdownItemSelected]}
+                      onPress={() => { setIzinForm({ ...izinForm, tur: t.key }); setIzinTurModalVisible(false); }}
+                    >
+                      <Text style={[styles.monthDropdownItemText, selected && styles.monthDropdownItemTextSelected]}>{`${t.ad} (Kalan: ${kalan} gün)`}</Text>
+                      {selected && (
+                        <Ionicons name="checkmark-outline" size={20} color="#25b2ef" />
+                      )}
+                    </TouchableOpacity>
+                  );
+                })}
+              </ScrollView>
+            </View>
+          </TouchableOpacity>
+        </Modal>
+
+        <Text style={{ fontSize: 14, fontWeight: '500', color: '#374151', marginBottom: 8 }}>Gerekçe</Text>
+        <View style={styles.iletisimMesajContainer}>
+          <TextInput
+            style={styles.iletisimMesajInput}
+            placeholder="İzin açıklaması"
+            value={izinForm.neden}
+            onChangeText={(text) => setIzinForm({ ...izinForm, neden: text })}
+            multiline
+            numberOfLines={3}
+            textAlignVertical="top"
+          />
+        </View>
+
+        <View style={{ flexDirection: 'row', gap: 10, marginTop: 12 }}>
+          <View style={{ flex: 1 }}>
+            <Text style={{ fontSize: 14, fontWeight: '500', color: '#374151', marginBottom: 8 }}>Başlangıç</Text>
+            <TouchableOpacity style={styles.dateInput} activeOpacity={0.8} onPress={() => openCalendar('start')}>
+              <Text style={styles.dateInputText}>{izinForm.baslangic || 'Tarih seçin'}</Text>
+              <Ionicons name="calendar-outline" size={18} color="#6b7280" />
+            </TouchableOpacity>
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={{ fontSize: 14, fontWeight: '500', color: '#374151', marginBottom: 8 }}>Bitiş</Text>
+            <TouchableOpacity style={styles.dateInput} activeOpacity={0.8} onPress={() => openCalendar('end')}>
+              <Text style={styles.dateInputText}>{izinForm.bitis || 'Tarih seçin'}</Text>
+              <Ionicons name="calendar-outline" size={18} color="#6b7280" />
+            </TouchableOpacity>
+          </View>
+        </View>
+
+        <Text style={{ color: '#6b7280', fontSize: 12, marginTop: 8 }}>
+          Belge (opsiyonel)
+        </Text>
+        <View style={{ marginTop: 6, flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+          <TouchableOpacity
+            style={styles.fileButton}
+            activeOpacity={0.85}
+            onPress={async () => {
+              const result = await DocumentPicker.getDocumentAsync({ type: ['*/*'] });
+              if ((result as any).canceled) return;
+              const asset = (result as any).assets?.[0];
+              if (asset?.uri && asset?.name) {
+                setBelge({ uri: asset.uri, name: asset.name, type: asset.mimeType });
+              }
+            }}
+          >
+            <Ionicons name="attach-outline" size={18} color="#fff" />
+            <Text style={styles.fileButtonText}>{belge ? 'Belgeyi Değiştir' : 'Belge Seç'}</Text>
+          </TouchableOpacity>
+          {belge ? (
+            <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+              <Text style={{ flex: 1 }} numberOfLines={1}>{belge.name}</Text>
+              <TouchableOpacity onPress={() => setBelge(null)} style={styles.fileRemoveBtn}>
+                <Ionicons name="close" size={16} color="#dc2626" />
+              </TouchableOpacity>
+            </View>
+          ) : null}
+        </View>
+
+        <TouchableOpacity
+          style={[styles.iletisimGonderButton, { marginTop: 16 }, (!izinForm.tur || !izinForm.neden.trim() || !izinForm.baslangic || !izinForm.bitis) && styles.iletisimGonderButtonDisabled]}
+          onPress={sendIzin}
+          disabled={!izinForm.tur || !izinForm.neden.trim() || !izinForm.baslangic || !izinForm.bitis}
+        >
+          <Text style={styles.iletisimGonderButtonText}>Talebi Gönder</Text>
+        </TouchableOpacity>
+      </View>
+
+      <Text style={[styles.sectionTitle, { fontSize: 18, marginTop: 10 }]}>Geçmiş Talepler</Text>
+      {izinLoading ? (
+        <View style={styles.comingSoonContainer}><Text>Yükleniyor...</Text></View>
+      ) : (
+        (izinler || []).length === 0 ? (
+          <View style={styles.comingSoonContainer}><Text>Talep bulunamadı</Text></View>
+        ) : (
+          izinler.map((i) => {
+            const t = izinTurleri.find(x => x.key === i.tur);
+            const gun = i.baslangic && i.bitis ? (Math.round(((new Date(i.bitis as any as string).getTime() - new Date(i.baslangic as any as string).getTime()) / (1000*60*60*24))) + 1) : i.gun || '' as any;
+            return (
+              <View key={i.id} style={styles.actionCard}>
+                <Text style={{ fontWeight: '600', color: '#0e2a47' }}>{t ? t.ad : i.tur}</Text>
+                <Text style={{ color: '#374151', marginTop: 4 }}>Tarih: {i.baslangic} - {i.bitis}</Text>
+                {i.gerekce ? <Text style={{ color: '#374151', marginTop: 4 }}>Açıklama: {i.gerekce}</Text> : null}
+                <Text style={{ color: '#374151', marginTop: 4 }}>Süre: {gun} gün</Text>
+                <Text style={{ fontWeight: '700', color: i.durum === 'Onaylandı' ? '#059669' : i.durum === 'Reddedildi' ? '#dc2626' : '#a16207', marginTop: 6 }}>
+                  Durum: {i.durum || '-'}
+                </Text>
+                {i.belge ? (
+                  <TouchableOpacity onPress={() => openUploadWithChooser(i.belge!)} style={{ marginTop: 8, flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                    <Ionicons name="attach-outline" size={18} color="#25b2ef" />
+                    <Text style={{ color: '#25b2ef' }} numberOfLines={1}>{i.belge}</Text>
+                  </TouchableOpacity>
+                ) : null}
+              </View>
+            );
+          })
+        )
+      )}
+    </View>
+  );
+
+  const renderCalendarModal = (type: 'start'|'end') => {
+    const visible = type==='start'?showStartCalendar:showEndCalendar;
+    const onClose = () => type==='start'?setShowStartCalendar(false):setShowEndCalendar(false);
+    const daysInMonth = getDaysInMonth(tempCal.year, tempCal.month);
+    const firstDay = getFirstDayOfMonth(tempCal.year, tempCal.month);
+    const today = new Date();
+    const selectedStr = type==='start' ? izinForm.baslangic : izinForm.bitis;
+    const [selY, selM, selD] = selectedStr && /^\d{4}-\d{2}-\d{2}$/.test(selectedStr)
+      ? selectedStr.split('-').map(v=>parseInt(v,10))
+      : [today.getFullYear(), today.getMonth()+1, today.getDate()];
+    const weeks: Array<Array<number|null>> = [];
+    let currentWeek: Array<number|null> = Array(firstDay===0?0:firstDay-1).fill(null);
+    for (let d=1; d<=daysInMonth; d++) {
+      currentWeek.push(d);
+      if (currentWeek.length === 7) { weeks.push(currentWeek); currentWeek = []; }
+    }
+    if (currentWeek.length) { while(currentWeek.length<7) currentWeek.push(null); weeks.push(currentWeek); }
+    return (
+      <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+        <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={onClose}>
+          <View style={styles.calendarContainer}>
+            <View style={styles.calendarHeader}>
+              <TouchableOpacity style={styles.navButton} onPress={() => setTempCal({ year: tempCal.month===1?tempCal.year-1:tempCal.year, month: tempCal.month===1?12:tempCal.month-1, day: 1 })}>
+                <Ionicons name="chevron-back" size={20} color="#1761a0" />
+              </TouchableOpacity>
+              <Text style={styles.monthYearText}>{getMonthName(tempCal.month)} {tempCal.year}</Text>
+              <TouchableOpacity style={styles.navButton} onPress={() => setTempCal({ year: tempCal.month===12?tempCal.year+1:tempCal.year, month: tempCal.month===12?1:tempCal.month+1, day: 1 })}>
+                <Ionicons name="chevron-forward" size={20} color="#1761a0" />
+              </TouchableOpacity>
+            </View>
+            <View style={styles.weekHeader}>
+              {['Pzt','Sal','Çar','Per','Cum','Cmt','Paz'].map((d)=> (
+                <Text key={d} style={styles.weekHeaderText}>{d}</Text>
+              ))}
+            </View>
+            {weeks.map((w, wi) => (
+              <View key={wi} style={styles.weekRow}>
+                {w.map((d, di) => (
+                  <TouchableOpacity key={di} style={[
+                    styles.dayCell,
+                    d===null ? styles.dayCellEmpty : null,
+                    (d!==null && selY===tempCal.year && selM===tempCal.month && selD===d) ? styles.dayCellSelected : null
+                  ]} disabled={d===null} onPress={() => d && pickDate(type, tempCal.year, tempCal.month, d)}>
+                    <Text style={[
+                      styles.dayCellText,
+                      (d!==null && selY===tempCal.year && selM===tempCal.month && selD===d) ? styles.dayCellTextSelected : null
+                    ]}>{d??''}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            ))}
+          </View>
+        </TouchableOpacity>
+      </Modal>
+    );
+  };
+
   const renderIletisim = () => (
     <View style={styles.section}>
       <Text style={styles.sectionTitle}>💬 Görüş / Öneri / Şikayet</Text>
@@ -435,7 +826,7 @@ export default function PersonelDashboardScreen({ navigation }: PersonelDashboar
       case 'history':
         return renderComingSoon('Geçmiş', '📜');
       case 'izin':
-        return renderComingSoon('İzin Talepleri', '📝');
+        return renderIzin();
       case 'duyuru':
         return renderDuyurular();
       case 'iletisim':
@@ -467,6 +858,8 @@ export default function PersonelDashboardScreen({ navigation }: PersonelDashboar
           }
         >
           {renderContent()}
+          {renderCalendarModal('start')}
+          {renderCalendarModal('end')}
         </ScrollView>
 
         {/* Bottom Tab Navigation */}
@@ -621,6 +1014,110 @@ const styles = StyleSheet.create({
     marginTop: 8,
     textAlign: 'center',
   },
+  // Calendar styles
+  weekHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingHorizontal: 12,
+    marginTop: 6,
+  },
+  weekHeaderText: {
+    width: (width - 48) / 7,
+    textAlign: 'center',
+    color: '#6b7280',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  calendarContainer: {
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 8,
+    marginHorizontal: 24,
+    minWidth: '75%',
+  },
+  calendarHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 8,
+  },
+  navButton: {
+    padding: 6,
+  },
+  monthYearText: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#0e2a47',
+  },
+  weekRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingHorizontal: 12,
+    marginTop: 8,
+  },
+  dayCell: {
+    width: (width - 48) / 7,
+    aspectRatio: 1,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#f9fafb',
+  },
+  dayCellSelected: {
+    backgroundColor: '#e0f2fe',
+    borderWidth: 1,
+    borderColor: '#25b2ef',
+  },
+  dayCellEmpty: {
+    backgroundColor: 'transparent',
+  },
+  dayCellText: {
+    color: '#374151',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  dayCellTextSelected: {
+    color: '#1761a0',
+    fontWeight: '800',
+  },
+  dateInput: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    borderWidth: 1,
+    borderColor: '#d1d5db',
+    borderRadius: 8,
+    backgroundColor: '#fff',
+    paddingVertical: 12,
+    paddingHorizontal: 12,
+  },
+  dateInputText: {
+    color: '#374151',
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  fileButton: {
+    backgroundColor: '#25b2ef',
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  fileButtonText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  fileRemoveBtn: {
+    padding: 6,
+    borderWidth: 1,
+    borderColor: '#fecaca',
+    borderRadius: 8,
+    backgroundColor: '#fff1f2',
+  },
   bottomTabContainer: {
     backgroundColor: '#fff',
     borderTopWidth: 1,
@@ -711,5 +1208,101 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 16,
     fontWeight: '600',
+  },
+  // Dropdown styles
+  dropdownContainer: {
+    marginBottom: 12,
+  },
+  dropdownSelect: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    borderWidth: 1,
+    borderColor: '#d1d5db',
+    borderRadius: 8,
+    backgroundColor: '#fff',
+    paddingVertical: 12,
+    paddingHorizontal: 12,
+  },
+  dropdownSelectedText: {
+    flex: 1,
+    marginRight: 8,
+    color: '#374151',
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  dropdownOptions: {
+    marginTop: 6,
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
+    borderRadius: 8,
+    backgroundColor: '#fff',
+    overflow: 'hidden',
+  },
+  dropdownOption: {
+    paddingVertical: 12,
+    paddingHorizontal: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f3f4f6',
+  },
+  dropdownOptionText: {
+    color: '#374151',
+    fontSize: 14,
+  },
+  // Modal styles
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.25)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  // Reuse admin dropdown modal styles naming
+  monthDropdownContainer: {
+    backgroundColor: '#fff',
+    marginHorizontal: 24,
+    borderRadius: 12,
+    overflow: 'hidden',
+    minWidth: '75%',
+  },
+  monthDropdownHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingTop: 12,
+    paddingBottom: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: '#e5e7eb',
+  },
+  monthDropdownTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#0e2a47',
+  },
+  monthDropdownClose: {
+    padding: 6,
+  },
+  monthDropdownScroll: {
+    maxHeight: 230,
+  },
+  monthDropdownItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f3f4f6',
+  },
+  monthDropdownItemSelected: {
+    backgroundColor: '#f0f9ff',
+  },
+  monthDropdownItemText: {
+    fontSize: 15,
+    color: '#374151',
+  },
+  monthDropdownItemTextSelected: {
+    color: '#1761a0',
+    fontWeight: '700',
   },
 });
