@@ -57,5 +57,6 @@ Kod tamamen geliştiriciye aittir, isteğe göre uyarlanabilir.
 Lisans: MIT
 
 Hazırlayan:
-Seyfettin Gök
+Yunus Kağan Aydın
+legacy from: Seyfettin Gök
 
