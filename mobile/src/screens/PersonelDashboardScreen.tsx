@@ -107,6 +107,10 @@ export default function PersonelDashboardScreen({ navigation }: PersonelDashboar
     if (sectionNow === 'izin') {
       loadIzinData();
     }
+    if (sectionNow === 'work') {
+      loadAktifKartlar();
+      restoreJob();
+    }
     setActiveSection(sectionNow || 'home');
   }, [currentPageIndex]);
 
@@ -496,6 +500,136 @@ export default function PersonelDashboardScreen({ navigation }: PersonelDashboar
     </View>
   );
 
+  // Üretim İşleri (aktif kartlar ve iş akışı)
+  interface AktifKart { id: string; ad: string; hedef: number }
+  const [aktifKartlar, setAktifKartlar] = useState<AktifKart[]>([]);
+  const [inProgress, setInProgress] = useState<{ kartId: string; kartAd: string; startTs: number } | null>(null);
+  const [elapsed, setElapsed] = useState(0);
+  const timerRef = useRef<NodeJS.Timer | null>(null);
+  const [qty, setQty] = useState('');
+  const [desc, setDesc] = useState('');
+
+  const formatTime = (sec: number) => {
+    const h = String(Math.floor(sec/3600)).padStart(2,'0');
+    const m = String(Math.floor((sec%3600)/60)).padStart(2,'0');
+    const s = String(sec%60).padStart(2,'0');
+    return `${h}:${m}:${s}`;
+  };
+
+  const startTimer = () => {
+    if (timerRef.current) return;
+    timerRef.current = setInterval(() => setElapsed(e => e + 1), 1000);
+  };
+  const stopTimer = () => {
+    if (timerRef.current) { clearInterval(timerRef.current as any); timerRef.current = null; }
+  };
+
+  const loadAktifKartlar = async () => {
+    try {
+      const token = await AsyncStorage.getItem('token');
+      const res = await fetch(`${API_BASE_URL}/api/uretim/personel/aktif`, { headers: token ? { Authorization:`Bearer ${token}` } : undefined });
+      const list = res.ok ? await res.json() : [];
+      setAktifKartlar(Array.isArray(list) ? list : []);
+    } catch {}
+  };
+
+  const restoreJob = async () => {
+    try {
+      const token = await AsyncStorage.getItem('token');
+      const res = await fetch(`${API_BASE_URL}/api/uretim/personel/inprogress`, { headers: token ? { Authorization:`Bearer ${token}` } : undefined });
+      if (res.ok) {
+        const job = await res.json();
+        if (job && job.kartId) {
+          setInProgress({ kartId: job.kartId, kartAd: job.kartAd, startTs: job.startTs });
+          setElapsed(Math.floor((Date.now() - job.startTs)/1000));
+          startTimer();
+        }
+      }
+    } catch {}
+  };
+
+  const startJob = async (id: string, ad: string) => {
+    try {
+      if (inProgress) { Alert.alert('Uyarı','Önceki işi bitirin.'); return; }
+      const token = await AsyncStorage.getItem('token');
+      const res = await fetch(`${API_BASE_URL}/api/uretim/personel/baslat`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ kartId: id })
+      });
+      if (!res.ok) { const e = await res.json().catch(()=>({ hata: res.status })); Alert.alert('Hata', 'Başlatma hatası: ' + (e.hata||res.status)); return; }
+      setInProgress({ kartId: id, kartAd: ad, startTs: Date.now() });
+      setElapsed(0); setQty(''); setDesc(''); startTimer();
+    } catch {}
+  };
+
+  const pauseJob = () => { stopTimer(); };
+  const resumeJob = () => { startTimer(); };
+
+  const finishJob = async () => {
+    try {
+      if (!inProgress) return;
+      stopTimer();
+      const adet = Number(qty);
+      if (!adet) { Alert.alert('Hata','Lütfen adet girin'); return; }
+      const token = await AsyncStorage.getItem('token');
+      const res = await fetch(`${API_BASE_URL}/api/uretim/personel/kayit`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ kartId: inProgress.kartId, adet, aciklama: desc.trim() })
+      });
+      if (!res.ok) { const e = await res.json().catch(()=>({ hata: res.status })); Alert.alert('Hata','Kayıt hatası: ' + (e.hata||res.status)); return; }
+      Alert.alert('Başarılı','Kaydedildi');
+      setInProgress(null); setElapsed(0); setQty(''); setDesc('');
+      loadAktifKartlar();
+    } catch {}
+  };
+
+  const renderWork = () => (
+    <View style={styles.section}>
+      <Text style={styles.sectionTitle}>🔧 Üretim İşleri</Text>
+      <View style={{ marginTop: 6 }}>
+        {aktifKartlar.length === 0 ? (
+          <View style={styles.comingSoonContainer}>
+            <Ionicons name="layers-outline" size={42} color="#154373" />
+            <Text style={styles.comingSoonText}>Aktif kart yok</Text>
+          </View>
+        ) : (
+          aktifKartlar.map(k => (
+            <View key={k.id} style={[styles.actionCard, { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }] }>
+              <View style={{ flex: 1, paddingRight: 12 }}>
+                <Text style={{ fontSize: 16, fontWeight: '600', color: '#0e2a47' }}>{k.ad}</Text>
+                <Text style={{ color: '#6b7280', marginTop: 2 }}>Hedef: {k.hedef}</Text>
+              </View>
+              <TouchableOpacity style={styles.primaryButton} onPress={() => startJob(k.id, k.ad)}>
+                <Ionicons name="play-outline" size={16} color="#fff" />
+                <Text style={styles.primaryButtonText}>Başlat</Text>
+              </TouchableOpacity>
+            </View>
+          ))
+        )}
+      </View>
+
+      {inProgress && (
+        <View style={[styles.actionCard, { marginTop: 10 }] }>
+          <Text style={{ fontSize: 16, fontWeight: '700', color: '#0e2a47' }}>{inProgress.kartAd}</Text>
+          <Text style={{ color: '#6b7280', marginTop: 4 }}>Süre: <Text style={{ fontFamily: 'monospace' }}>{formatTime(elapsed)}</Text></Text>
+          <View style={{ flexDirection: 'row', gap: 8, marginTop: 8 }}>
+            <TouchableOpacity style={styles.secondaryButton} onPress={pauseJob}><Text style={styles.secondaryButtonText}>Duraklat</Text></TouchableOpacity>
+            <TouchableOpacity style={styles.secondaryButton} onPress={resumeJob}><Text style={styles.secondaryButtonText}>Devam Et</Text></TouchableOpacity>
+            <TouchableOpacity style={styles.negativeButton} onPress={finishJob}><Text style={styles.negativeButtonText}>Bitir</Text></TouchableOpacity>
+          </View>
+          <View style={{ marginTop: 10 }}>
+            <Text style={{ fontSize: 14, fontWeight: '600', color: '#0e2a47', marginBottom: 6 }}>Üretilen Adet</Text>
+            <TextInput style={{ borderWidth: 1, borderColor: '#d0d0d0', borderRadius: 8, padding: 12, backgroundColor: '#fff' }} keyboardType="numeric" value={qty} onChangeText={setQty} placeholder="Adet" />
+            <Text style={{ fontSize: 14, fontWeight: '600', color: '#0e2a47', marginBottom: 6, marginTop: 10 }}>Açıklama</Text>
+            <TextInput style={{ borderWidth: 1, borderColor: '#d0d0d0', borderRadius: 8, padding: 12, backgroundColor: '#fff' }} value={desc} onChangeText={setDesc} placeholder="Açıklama" />
+          </View>
+        </View>
+      )}
+    </View>
+  );
+
   const renderDuyurular = () => (
     <View style={styles.section}>
       <Text style={styles.sectionTitle}>📢 Duyurular</Text>
@@ -877,7 +1011,7 @@ export default function PersonelDashboardScreen({ navigation }: PersonelDashboar
                     case 'home':
                       return renderHome();
                     case 'work':
-                      return renderComingSoon('Üretim İşleri', '🔧');
+                      return renderWork();
                     case 'history':
                       return renderComingSoon('Geçmiş', '📜');
                     case 'izin':
@@ -1058,6 +1192,31 @@ const styles = StyleSheet.create({
     marginTop: 8,
     textAlign: 'center',
   },
+  primaryButton: {
+    backgroundColor: '#154373',
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    borderRadius: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    alignSelf: 'flex-start',
+  },
+  primaryButtonText: { color: '#fff', fontWeight: '700' },
+  secondaryButton: {
+    backgroundColor: '#444c59',
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+  },
+  secondaryButtonText: { color: '#fff', fontWeight: '600' },
+  negativeButton: {
+    backgroundColor: '#e30613',
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+  },
+  negativeButtonText: { color: '#fff', fontWeight: '700' },
   // Calendar styles
   weekHeader: {
     flexDirection: 'row',
