@@ -139,6 +139,8 @@ export default function AdminDashboardScreen({ navigation }: AdminDashboardScree
     tur: '',
     durum: ''
   });
+  const [izinDisplayed, setIzinDisplayed] = useState<IzinTalebi[]>([]);
+  const [izinQueried, setIzinQueried] = useState(false);
   const [showMonthDropdown, setShowMonthDropdown] = useState(false);
   const [showYearDropdown, setShowYearDropdown] = useState(false);
   const [showPersonDropdown, setShowPersonDropdown] = useState(false);
@@ -1161,6 +1163,7 @@ export default function AdminDashboardScreen({ navigation }: AdminDashboardScree
         
         setIzinTalepleri(izinler);
         setPersonelList(personeller);
+        setIzinDisplayed([]); // başlangıçta listeyi boş tut
       }
     } catch (error) {
       console.error('İzin talepleri yükleme hatası:', error);
@@ -1432,6 +1435,12 @@ export default function AdminDashboardScreen({ navigation }: AdminDashboardScree
         (izinFilters.durum === '' || izin.durum === izinFilters.durum)
       );
     });
+  };
+
+  const applyIzinFiltersNow = () => {
+    const list = getFilteredIzinTalepleri();
+    setIzinDisplayed(list);
+    setIzinQueried(true);
   };
 
   const getPersonelName = (personelId: number) => {
@@ -2121,24 +2130,71 @@ export default function AdminDashboardScreen({ navigation }: AdminDashboardScree
 
   const renderUretimRaporlari = () => (
     <View style={styles.section}>
+      {(() => { return null; })()}
       <Text style={styles.sectionTitle}>📊 Üretim Raporları</Text>
-      <View style={{ flexDirection:'row', gap:8, marginBottom:8 }}>
-        <TouchableOpacity onPress={()=>setOpenYear(true)} style={{ flex:1, borderWidth:1, borderColor:'#d0d0d0', borderRadius:8, padding:12, backgroundColor:'#fff' }}>
-          <Text style={{ color:'#374151' }}>{raporFilters.yil === '' ? 'Yıl Seç' : raporFilters.yil === ALL ? 'Tüm Yıllar' : raporFilters.yil}</Text>
-        </TouchableOpacity>
-        <TouchableOpacity onPress={()=>setOpenMonth(true)} style={{ flex:1, borderWidth:1, borderColor:'#d0d0d0', borderRadius:8, padding:12, backgroundColor:'#fff' }}>
-          <Text style={{ color:'#374151' }}>{raporFilters.ay === '' ? 'Ay Seç' : raporFilters.ay === ALL ? 'Tüm Aylar' : raporFilters.ay}</Text>
-        </TouchableOpacity>
+      {(() => {
+        // Ay isimleri (görünen etiket), değerler API için 01-12
+        // ALL özel değeri tümü içindir
+        return null;
+      })()}
+      <View style={styles.card}>
+        <View style={{ flexDirection:'row', gap:10 }}>
+          <View style={{ flex:1 }}>
+            <Text style={styles.filterLabel}>Ay:</Text>
+            <TouchableOpacity onPress={()=>setOpenMonth(true)} style={styles.dropdownButton}>
+              <Text style={styles.filterDropdownText}>{(() => {
+                const months = [
+                  { val: ALL, label: 'Tümü' },
+                  { val: '01', label: 'Ocak' },
+                  { val: '02', label: 'Şubat' },
+                  { val: '03', label: 'Mart' },
+                  { val: '04', label: 'Nisan' },
+                  { val: '05', label: 'Mayıs' },
+                  { val: '06', label: 'Haziran' },
+                  { val: '07', label: 'Temmuz' },
+                  { val: '08', label: 'Ağustos' },
+                  { val: '09', label: 'Eylül' },
+                  { val: '10', label: 'Ekim' },
+                  { val: '11', label: 'Kasım' },
+                  { val: '12', label: 'Aralık' },
+                ];
+                const val = raporFilters.ay;
+                if (val === '' || val === ALL) return 'Tümü';
+                return (months.find(m=>m.val===val)?.label) || val;
+              })()}</Text>
+              <Ionicons name="chevron-down-outline" size={18} color="#6b7280" />
+            </TouchableOpacity>
+          </View>
+          <View style={{ flex:1 }}>
+            <Text style={styles.filterLabel}>Yıl:</Text>
+            <TouchableOpacity onPress={()=>setOpenYear(true)} style={styles.dropdownButton}>
+              <Text style={styles.filterDropdownText}>{raporFilters.yil === '' || raporFilters.yil === ALL ? 'Tümü' : raporFilters.yil}</Text>
+              <Ionicons name="chevron-down-outline" size={18} color="#6b7280" />
+            </TouchableOpacity>
+          </View>
+        </View>
+        <View style={{ flexDirection:'row', gap:10, marginTop:10 }}>
+          <View style={{ flex:1 }}>
+            <Text style={styles.filterLabel}>Kart:</Text>
+            <TouchableOpacity onPress={()=>setOpenCard(true)} style={styles.dropdownButton}>
+              <Text style={styles.filterDropdownText}>{raporFilters.kartId === '' || raporFilters.kartId === ALL ? 'Tümü' : (raporCards.find(c=>c.id===raporFilters.kartId)?.ad || 'Kart')}</Text>
+              <Ionicons name="chevron-down-outline" size={18} color="#6b7280" />
+            </TouchableOpacity>
+          </View>
+          <View style={{ flex:1 }}>
+            <Text style={styles.filterLabel}>Personel:</Text>
+            <TouchableOpacity onPress={()=>setOpenPerson(true)} style={styles.dropdownButton}>
+              <Text style={styles.filterDropdownText}>{raporFilters.personelId === '' || raporFilters.personelId === ALL ? 'Tümü' : (raporPersons.find(p=>String(p.id)===raporFilters.personelId)?.ad || 'Personel')}</Text>
+              <Ionicons name="chevron-down-outline" size={18} color="#6b7280" />
+            </TouchableOpacity>
+          </View>
+        </View>
+        <View style={{ flexDirection:'row', marginTop:12 }}>
+          <TouchableOpacity style={[styles.primaryButton, { flex:1 }]} onPress={fetchReports}>
+            <Text style={styles.primaryButtonText}>Raporu Getir</Text>
+          </TouchableOpacity>
+        </View>
       </View>
-      <View style={{ flexDirection:'row', gap:8, marginBottom:10 }}>
-        <TouchableOpacity onPress={()=>setOpenCard(true)} style={{ flex:1, borderWidth:1, borderColor:'#d0d0d0', borderRadius:8, padding:12, backgroundColor:'#fff' }}>
-          <Text style={{ color:'#374151' }}>{raporFilters.kartId === '' ? 'Kart Seç' : raporFilters.kartId === ALL ? 'Tüm Kartlar' : (raporCards.find(c=>c.id===raporFilters.kartId)?.ad || 'Kart')}</Text>
-        </TouchableOpacity>
-        <TouchableOpacity onPress={()=>setOpenPerson(true)} style={{ flex:1, borderWidth:1, borderColor:'#d0d0d0', borderRadius:8, padding:12, backgroundColor:'#fff' }}>
-          <Text style={{ color:'#374151' }}>{raporFilters.personelId === '' ? 'Personel Seç' : raporFilters.personelId === ALL ? 'Tüm Personeller' : (raporPersons.find(p=>String(p.id)===raporFilters.personelId)?.ad || 'Personel')}</Text>
-        </TouchableOpacity>
-      </View>
-      <TouchableOpacity style={styles.primaryButton} onPress={fetchReports}><Text style={styles.primaryButtonText}>Raporu Getir</Text></TouchableOpacity>
       {raporOzet && (
         <Text style={{ fontWeight:'700', marginTop:10 }}>Toplam Adet: {raporOzet.topAdet} | Toplam Süre: {raporOzet.topSure} dk</Text>
       )}
@@ -2184,9 +2240,23 @@ export default function AdminDashboardScreen({ navigation }: AdminDashboardScree
               <TouchableOpacity onPress={()=>setOpenMonth(false)}><Ionicons name="close-outline" size={28} color="#6b7280" /></TouchableOpacity>
             </View>
             <ScrollView style={{ padding: 12 }}>
-              {[ALL,'01','02','03','04','05','06','07','08','09','10','11','12'].map(m => (
-                <TouchableOpacity key={m||'all'} onPress={()=>{ setRaporFilters({...raporFilters, ay: m }); setOpenMonth(false); }} style={{ paddingVertical:12 }}>
-                  <Text style={{ color: m!==ALL? '#374151':'#1761a0', fontWeight: m!==ALL? '500':'700' }}>{m!==ALL? m : 'Tümü'}</Text>
+              {[
+                { val: ALL, label: 'Tümü' },
+                { val: '01', label: 'Ocak' },
+                { val: '02', label: 'Şubat' },
+                { val: '03', label: 'Mart' },
+                { val: '04', label: 'Nisan' },
+                { val: '05', label: 'Mayıs' },
+                { val: '06', label: 'Haziran' },
+                { val: '07', label: 'Temmuz' },
+                { val: '08', label: 'Ağustos' },
+                { val: '09', label: 'Eylül' },
+                { val: '10', label: 'Ekim' },
+                { val: '11', label: 'Kasım' },
+                { val: '12', label: 'Aralık' },
+              ].map(m => (
+                <TouchableOpacity key={m.val||'all'} onPress={()=>{ setRaporFilters({...raporFilters, ay: m.val }); setOpenMonth(false); }} style={{ paddingVertical:12 }}>
+                  <Text style={{ color: m.val!==ALL? '#374151':'#1761a0', fontWeight: m.val!==ALL? '500':'700' }}>{m.label}</Text>
                 </TouchableOpacity>
               ))}
             </ScrollView>
@@ -2427,17 +2497,24 @@ export default function AdminDashboardScreen({ navigation }: AdminDashboardScree
               </TouchableOpacity>
             </View>
           </View>
+
+          {/* Apply button inside filter card */}
+          <View style={{ flexDirection:'row', marginTop: 10 }}>
+            <TouchableOpacity style={[styles.primaryButton, { flex:1 }]} onPress={applyIzinFiltersNow}>
+              <Text style={styles.primaryButtonText}>İzin Taleplerini Getir</Text>
+            </TouchableOpacity>
+          </View>
         </View>
 
         {/* İzin Talepleri Listesi */}
         <ScrollView style={styles.izinListContainer}>
-          {filteredIzinTalepleri.length === 0 ? (
+          {izinQueried && izinDisplayed.length === 0 ? (
             <View style={styles.emptyContainer}>
               <Ionicons name="document-text-outline" size={40} color="#ccc" />
               <Text style={styles.emptyText}>İzin talebi bulunamadı</Text>
             </View>
           ) : (
-            filteredIzinTalepleri.map((izin) => (
+            izinDisplayed.map((izin) => (
               <View key={izin.id} style={styles.izinCard}>
                 <View style={styles.izinHeader}>
                   <Text style={styles.izinPersonelName}>
@@ -3482,10 +3559,14 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     borderRadius: 8,
     alignSelf: 'flex-start',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   primaryButtonText: {
     color: '#fff',
     fontWeight: '700',
+    textAlign: 'center',
+    width: '100%',
   },
   statsContainer: {
     flexDirection: 'column',
@@ -4042,6 +4123,11 @@ const styles = StyleSheet.create({
   },
   dropdownText: {
     fontSize: 16,
+    color: '#333',
+    flex: 1,
+  },
+  filterDropdownText: {
+    fontSize: 14,
     color: '#333',
     flex: 1,
   },
