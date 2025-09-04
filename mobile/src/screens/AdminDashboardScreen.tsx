@@ -12,6 +12,7 @@ import {
   Image,
   Modal,
   TextInput,
+  KeyboardAvoidingView,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
@@ -81,6 +82,18 @@ interface OzlukBelge {
   personelId: number;
   tur: string;
   dosya: string;
+}
+
+// Üretim Kartları
+interface UretimKart {
+  id: string;
+  ad: string;
+  hedef: number;
+  topAdet?: number;
+  kalan?: number;
+  aciklama?: string;
+  aktif?: boolean;
+  tamamlandi?: boolean;
 }
 
 interface DocumentFile {
@@ -194,6 +207,12 @@ export default function AdminDashboardScreen({ navigation }: AdminDashboardScree
   // Track if this is the first load
   const [isFirstLoad, setIsFirstLoad] = useState(true);
 
+  // Üretim Kartları State'leri
+  const [kartlar, setKartlar] = useState<UretimKart[]>([]);
+  const [kartLoading, setKartLoading] = useState(false);
+  const [kartModalVisible, setKartModalVisible] = useState(false);
+  const [newKart, setNewKart] = useState({ ad: '', hedef: '', aciklama: '' });
+
   useEffect(() => {
     if (isFirstLoad) {
       // First load - use regular loading with indicator
@@ -232,6 +251,8 @@ export default function AdminDashboardScreen({ navigation }: AdminDashboardScree
       loadIzinTurleri();
     } else if (sectionNow === 'duyuru') {
       loadDuyurular();
+    } else if (sectionNow === 'kartlar') {
+      loadKartlar();
     }
     
     // Update page index when activeSection changes via bottom navigation
@@ -357,6 +378,89 @@ export default function AdminDashboardScreen({ navigation }: AdminDashboardScree
       // Silent error handling for background loading
       console.error('Personnel loading error:', error);
     }
+  };
+
+  // Üretim Kartları API
+  const loadKartlar = async () => {
+    try {
+      setKartLoading(true);
+      const token = await AsyncStorage.getItem('token');
+      if (!token) {
+        navigation.navigate('AdminLogin');
+        return;
+      }
+      const res = await fetch(`${API_BASE_URL}/api/uretim/kartlar`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setKartlar(Array.isArray(data) ? data : []);
+      }
+    } catch (e) {
+      console.error('Kartlar yüklenemedi', e);
+    } finally {
+      setKartLoading(false);
+    }
+  };
+
+  const toggleKart = async (id: string) => {
+    try {
+      const token = await AsyncStorage.getItem('token');
+      if (!token) return;
+      await fetch(`${API_BASE_URL}/api/uretim/kart/${id}/durum`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      loadKartlar();
+    } catch (e) {}
+  };
+
+  const completeKart = async (id: string) => {
+    try {
+      const token = await AsyncStorage.getItem('token');
+      if (!token) return;
+      await fetch(`${API_BASE_URL}/api/uretim/kart/${id}/tamamla`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      loadKartlar();
+    } catch (e) {}
+  };
+
+  const deleteKart = async (id: string) => {
+    Alert.alert('Onay', 'Kartı silmek istediğinize emin misiniz?', [
+      { text: 'İptal', style: 'cancel' },
+      { text: 'Sil', style: 'destructive', onPress: async () => {
+        try {
+          const token = await AsyncStorage.getItem('token');
+          if (!token) return;
+          await fetch(`${API_BASE_URL}/api/uretim/kart/${id}`, {
+            method: 'DELETE',
+            headers: { Authorization: `Bearer ${token}` }
+          });
+          loadKartlar();
+        } catch (e) {}
+      } }
+    ]);
+  };
+
+  const saveNewKart = async () => {
+    try {
+      if (!newKart.ad.trim() || !newKart.hedef) {
+        Alert.alert('Uyarı', 'Ad ve hedef zorunludur');
+        return;
+      }
+      const token = await AsyncStorage.getItem('token');
+      if (!token) return;
+      await fetch(`${API_BASE_URL}/api/uretim/kart`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ ad: newKart.ad.trim(), hedef: Number(newKart.hedef), aciklama: newKart.aciklama.trim() })
+      });
+      setKartModalVisible(false);
+      setNewKart({ ad: '', hedef: '', aciklama: '' });
+      loadKartlar();
+    } catch (e) {}
   };
 
   const editPersonel = (personel: Personel) => {
@@ -1878,6 +1982,91 @@ export default function AdminDashboardScreen({ navigation }: AdminDashboardScree
     </View>
   );
 
+  const renderKartlar = () => (
+    <View style={styles.section}>
+      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+        <Text style={styles.sectionTitle}>🗂️ Üretim Kartları</Text>
+        <TouchableOpacity style={styles.addButton} onPress={() => setKartModalVisible(true)}>
+          <Ionicons name="add-circle-outline" size={18} color="#fff" />
+          <Text style={styles.addButtonText}>Yeni Kart</Text>
+        </TouchableOpacity>
+      </View>
+
+      {kartLoading ? (
+        <Text style={{ color: '#6b7280' }}>Yükleniyor...</Text>
+      ) : kartlar.length === 0 ? (
+        <View style={styles.emptyContainer}>
+          <Ionicons name="layers-outline" size={42} color="#1761a0" />
+          <Text style={styles.emptyText}>Henüz kart yok</Text>
+          <Text style={styles.emptySubtext}>Yeni kart oluşturmak için sağ üstteki butonu kullanın</Text>
+        </View>
+      ) : (
+        <View>
+          {kartlar.map(k => (
+            <View key={k.id} style={styles.izinCard}>
+              <Text style={styles.izinPersonelName}>{k.ad}</Text>
+              <Text style={{ color: '#6b7280', marginTop: 2 }}>
+                Hedef: {k.hedef} | Üretildi: {k.topAdet || 0} | Kalan: {typeof k.kalan !== 'undefined' ? k.kalan : (k.hedef - (k.topAdet || 0))}
+              </Text>
+              <Text style={{ color: '#6b7280', marginTop: 2 }}>{k.aciklama || '–'}</Text>
+              <View style={[styles.izinActions, { marginTop: 8 }]}>
+                <TouchableOpacity style={[styles.izinActionButton, styles.secondaryButton]} onPress={() => toggleKart(k.id)}>
+                  <Ionicons name="swap-horizontal-outline" size={16} color="#fff" />
+                  <Text style={styles.izinActionText}>{k.aktif ? 'Pasif Yap' : 'Aktif Yap'}</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={[styles.izinActionButton, k.tamamlandi ? styles.secondaryButton : styles.approveButton]} onPress={() => completeKart(k.id)}>
+                  <Ionicons name="checkmark-done-outline" size={16} color="#fff" />
+                  <Text style={styles.izinActionText}>{k.tamamlandi ? 'Yeniden Aç' : 'Tamamla'}</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={[styles.izinActionButton, styles.rejectButton]} onPress={() => deleteKart(k.id)}>
+                  <Ionicons name="trash-outline" size={16} color="#fff" />
+                  <Text style={styles.izinActionText}>Sil</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          ))}
+        </View>
+      )}
+
+      {/* Yeni Kart Modal */}
+      <Modal visible={kartModalVisible} transparent animationType="slide" onRequestClose={() => setKartModalVisible(false)}>
+        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.modalOverlay}>
+          <View style={[styles.modalContainer, { height: '55%' }]}> 
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Yeni Üretim Kartı</Text>
+              <TouchableOpacity onPress={() => setKartModalVisible(false)}><Ionicons name="close-outline" size={28} color="#6b7280" /></TouchableOpacity>
+            </View>
+            <ScrollView style={{ padding: 12 }} keyboardShouldPersistTaps="handled">
+              <View style={styles.inputContainer}>
+                <Text style={styles.inputLabel}>Kart Adı</Text>
+                <TextInput style={styles.input} value={newKart.ad} onChangeText={(t) => setNewKart({ ...newKart, ad: t })} placeholder="Kart adı" />
+              </View>
+              <View style={styles.inputContainer}>
+                <Text style={styles.inputLabel}>Hedef Adet</Text>
+                <TextInput style={styles.input} value={newKart.hedef} onChangeText={(t) => setNewKart({ ...newKart, hedef: t.replace(/[^0-9]/g, '') })} keyboardType="numeric" placeholder="Hedef" />
+              </View>
+              <View style={styles.inputContainer}>
+                <Text style={styles.inputLabel}>Açıklama</Text>
+                <TextInput style={styles.input} value={newKart.aciklama} onChangeText={(t) => setNewKart({ ...newKart, aciklama: t })} placeholder="Açıklama" />
+              </View>
+              <View style={{ height: 8 }} />
+            </ScrollView>
+            <View style={{ flexDirection: 'row', justifyContent: 'flex-end', gap: 8, paddingHorizontal: 12, paddingBottom: 12 }}>
+              <TouchableOpacity style={[styles.izinActionButton, styles.rejectButton]} onPress={() => setKartModalVisible(false)}>
+                <Ionicons name="close-circle-outline" size={16} color="#fff" />
+                <Text style={styles.izinActionText}>İptal</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={[styles.izinActionButton, styles.approveButton]} onPress={saveNewKart}>
+                <Ionicons name="save-outline" size={16} color="#fff" />
+                <Text style={styles.izinActionText}>Kaydet</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
+    </View>
+  );
+
   const renderIletisim = () => {
     const messageTypes = ['Tümü', 'Görüş', 'Öneri', 'Şikayet'];
     
@@ -2529,7 +2718,7 @@ export default function AdminDashboardScreen({ navigation }: AdminDashboardScree
       case 'duyuru':
         return renderDuyurular();
       case 'kartlar':
-        return renderComingSoon('🗂️ Üretim Kartları');
+        return renderKartlar();
       case 'raporlar':
         return renderComingSoon('📊 Üretim Raporları');
       case 'iletisim':
@@ -2568,7 +2757,15 @@ export default function AdminDashboardScreen({ navigation }: AdminDashboardScree
               <ScrollView
                 style={styles.content}
                 refreshControl={
-                  <RefreshControl refreshing={loading} onRefresh={loadStats} />
+                  <RefreshControl
+                    refreshing={loading || (menuItems[index].id === 'kartlar' && kartLoading)}
+                    onRefresh={() => {
+                      loadStats();
+                      if (menuItems[index].id === 'kartlar') {
+                        loadKartlar();
+                      }
+                    }}
+                  />
                 }
               >
                 {(() => {
@@ -2584,7 +2781,7 @@ export default function AdminDashboardScreen({ navigation }: AdminDashboardScree
                     case 'duyuru':
                       return renderDuyurular();
                     case 'kartlar':
-                      return renderComingSoon('🗂️ Üretim Kartları');
+                      return renderKartlar();
                     case 'raporlar':
                       return renderComingSoon('📊 Üretim Raporları');
                     case 'iletisim':
@@ -3088,6 +3285,19 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.25,
     shadowRadius: 3.84,
     elevation: 5,
+  },
+  addButton: {
+    backgroundColor: '#1761a0',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 8,
+  },
+  addButtonText: {
+    color: '#fff',
+    fontWeight: '600',
   },
   statsContainer: {
     flexDirection: 'column',
@@ -4204,6 +4414,9 @@ const styles = StyleSheet.create({
   },
   approveButton: {
     backgroundColor: '#22c55e',
+  },
+  secondaryButton: {
+    backgroundColor: '#444c59',
   },
   rejectButton: {
     backgroundColor: '#ef4444',
