@@ -4,7 +4,10 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 
 const PERSONEL_FILE = path.join(__dirname, '../data/personel.json');
-const JWT_SECRET = 'change_this_to_a_strong_secret';
+const JWT_SECRET = process.env.JWT_SECRET || (process.env.NODE_ENV === 'production' ? null : 'dev_insecure_secret');
+if (!JWT_SECRET) {
+  throw new Error('JWT_SECRET environment variable is required in production');
+}
 
 // Tüm personelleri listeler (passwordsiz)
 exports.list = (req, res) => {

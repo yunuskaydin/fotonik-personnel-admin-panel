@@ -1,5 +1,6 @@
 const jwt = require('jsonwebtoken');
-const JWT_SECRET = 'change_this_to_a_strong_secret';
+require('dotenv').config();
+const JWT_SECRET = process.env.JWT_SECRET;
 
 // Admin mi kontrolü
 exports.admin = (req, res, next) => {
