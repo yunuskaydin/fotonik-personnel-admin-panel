@@ -13,6 +13,7 @@ import {
   Modal,
   TextInput,
   KeyboardAvoidingView,
+  Animated,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
@@ -118,6 +119,31 @@ export default function AdminDashboardScreen({ navigation }: AdminDashboardScree
   const insets = useSafeAreaInsets();
   const [stats, setStats] = useState<Stats>({ toplam: 0, rapor: '—', izin: 0 });
   const [loading, setLoading] = useState(false);
+  const [sectionLoading, setSectionLoading] = useState<{[key:string]: boolean}>({});
+  const [visitedSections, setVisitedSections] = useState<{[key:string]: boolean}>({});
+
+  const setSectionBusy = (key: string, val: boolean) => {
+    setSectionLoading(prev => ({ ...prev, [key]: val }));
+  };
+
+  const SkeletonCard = () => (
+    <View style={{ backgroundColor:'#f3f4f6', borderRadius:12, padding:16, marginBottom:12 }}>
+      <View style={{ height:14, backgroundColor:'#e5e7eb', borderRadius:6, width:'55%' }} />
+      <View style={{ height:10, backgroundColor:'#e5e7eb', borderRadius:6, width:'35%', marginTop:10 }} />
+      <View style={{ height:10, backgroundColor:'#e5e7eb', borderRadius:6, width:'65%', marginTop:8 }} />
+    </View>
+  );
+
+  const SkeletonList = ({ count=3 }:{count?:number}) => (
+    <View style={{ paddingHorizontal:20, paddingTop:10 }}>
+      {Array.from({length:count}).map((_,i)=>(<SkeletonCard key={i}/>))}
+    </View>
+  );
+
+  const renderWithSkeleton = (key: string, render: () => React.ReactElement) => {
+    const showSkeleton = !visitedSections[key] || sectionLoading[key];
+    return showSkeleton ? <SkeletonList /> : render();
+  };
   const [activeSection, setActiveSection] = useState('dashboard');
   const [personelList, setPersonelList] = useState<Personel[]>([]);
   
@@ -226,38 +252,42 @@ export default function AdminDashboardScreen({ navigation }: AdminDashboardScree
     }
 
     const sectionNow = menuItems[currentPageIndex]?.id;
-    if (sectionNow === 'personel') {
-      if (isFirstLoad) {
-        loadPersoneller();
-      } else {
-        loadPersonellerQuiet();
+    if (!sectionNow) return;
+
+    const firstVisit = !visitedSections[sectionNow];
+    if (firstVisit) setSectionBusy(sectionNow, true);
+
+    (async () => {
+      try {
+        if (sectionNow === 'personel') {
+          if (isFirstLoad) await loadPersoneller(); else await loadPersonellerQuiet();
+        } else if (sectionNow === 'ozluk') {
+          // Reset özlük states when entering özlük section
+          setSelectedPersonelId(null);
+          setSelectedDocumentType('');
+          setSelectedDocument(null);
+          setOzlukBelgeleri([]);
+          setShowPersonelPicker(false);
+          setShowDocumentTypePicker(false);
+          if (isFirstLoad) await loadPersoneller(); else await loadPersonellerQuiet();
+        } else if (sectionNow === 'iletisim') {
+          await loadIletisimMesajlari();
+        } else if (sectionNow === 'izin') {
+          await Promise.all([loadIzinTalepleri(), loadIzinTurleri()]);
+        } else if (sectionNow === 'duyuru') {
+          await loadDuyurular();
+        } else if (sectionNow === 'kartlar') {
+          await loadKartlar();
+        } else if (sectionNow === 'raporlar') {
+          await loadReportsMeta();
+        }
+      } finally {
+        if (firstVisit) {
+          setVisitedSections(prev => ({ ...prev, [sectionNow]: true }));
+          setSectionBusy(sectionNow, false);
+        }
       }
-    } else if (sectionNow === 'ozluk') {
-      // Reset özlük states when entering özlük section
-      setSelectedPersonelId(null);
-      setSelectedDocumentType('');
-      setSelectedDocument(null);
-      setOzlukBelgeleri([]);
-      setShowPersonelPicker(false);
-      setShowDocumentTypePicker(false);
-      
-      if (isFirstLoad) {
-        loadPersoneller();
-      } else {
-        loadPersonellerQuiet();
-      }
-    } else if (sectionNow === 'iletisim') {
-      loadIletisimMesajlari();
-    } else if (sectionNow === 'izin') {
-      loadIzinTalepleri();
-      loadIzinTurleri();
-    } else if (sectionNow === 'duyuru') {
-      loadDuyurular();
-    } else if (sectionNow === 'kartlar') {
-      loadKartlar();
-    } else if (sectionNow === 'raporlar') {
-      loadReportsMeta();
-    }
+    })();
     
     // Update page index when activeSection changes via bottom navigation
     const pageIndex = currentPageIndex;
@@ -1642,20 +1672,28 @@ export default function AdminDashboardScreen({ navigation }: AdminDashboardScree
   const renderDashboard = () => (
     <View style={styles.section}>
       <Text style={styles.sectionTitle}>Hoş Geldiniz</Text>
-      <View style={styles.statsContainer}>
-        <View style={styles.statCard}>
-          <Text style={styles.statLabel}>Toplam Personel</Text>
-          <Text style={styles.statValue}>{stats.toplam}</Text>
+      {(!visitedSections['dashboard'] || sectionLoading['dashboard']) ? (
+        <View style={styles.statsContainer}>
+          <View style={styles.statCard}><View style={{ height:14, backgroundColor:'#e5e7eb', borderRadius:6, width:'60%' }} /><View style={{ height:28, backgroundColor:'#e5e7eb', borderRadius:8, width:'40%', marginTop:10 }} /></View>
+          <View style={styles.statCard}><View style={{ height:14, backgroundColor:'#e5e7eb', borderRadius:6, width:'60%' }} /><View style={{ height:28, backgroundColor:'#e5e7eb', borderRadius:8, width:'40%', marginTop:10 }} /></View>
+          <View style={styles.statCard}><View style={{ height:14, backgroundColor:'#e5e7eb', borderRadius:6, width:'60%' }} /><View style={{ height:28, backgroundColor:'#e5e7eb', borderRadius:8, width:'40%', marginTop:10 }} /></View>
         </View>
-        <View style={styles.statCard}>
-          <Text style={styles.statLabel}>Bugünkü Rapor</Text>
-          <Text style={styles.statValue}>{stats.rapor}</Text>
+      ) : (
+        <View style={styles.statsContainer}>
+          <View style={styles.statCard}>
+            <Text style={styles.statLabel}>Toplam Personel</Text>
+            <Text style={styles.statValue}>{stats.toplam}</Text>
+          </View>
+          <View style={styles.statCard}>
+            <Text style={styles.statLabel}>Bugünkü Rapor</Text>
+            <Text style={styles.statValue}>{stats.rapor}</Text>
+          </View>
+          <View style={styles.statCard}>
+            <Text style={styles.statLabel}>Aktif İzin Talebi</Text>
+            <Text style={styles.statValue}>{stats.izin}</Text>
+          </View>
         </View>
-        <View style={styles.statCard}>
-          <Text style={styles.statLabel}>Aktif İzin Talebi</Text>
-          <Text style={styles.statValue}>{stats.izin}</Text>
-        </View>
-      </View>
+      )}
     </View>
   );
 
@@ -1670,7 +1708,9 @@ export default function AdminDashboardScreen({ navigation }: AdminDashboardScree
       </View>
       
       {/* Scrollable Content */}
-      {personelList.length === 0 ? (
+      {sectionLoading.personel ? (
+        <SkeletonList count={4} />
+      ) : personelList.length === 0 ? (
         <View style={styles.emptyContainer}>
           <Ionicons name="people-outline" size={60} color="#1761a0" />
           <Text style={styles.emptyText}>Henüz personel kaydı yok</Text>
@@ -2955,21 +2995,21 @@ export default function AdminDashboardScreen({ navigation }: AdminDashboardScree
   const renderContent = () => {
     switch (activeSection) {
       case 'dashboard':
-        return renderDashboard();
+        return renderWithSkeleton('dashboard', renderDashboard);
       case 'personel':
-        return renderPersoneller();
+        return renderWithSkeleton('personel', renderPersoneller);
       case 'ozluk':
-        return renderOzlukBelgeleri();
+        return renderWithSkeleton('ozluk', renderOzlukBelgeleri);
       case 'izin':
-        return renderIzinTalepleri();
+        return renderWithSkeleton('izin', renderIzinTalepleri);
       case 'duyuru':
-        return renderDuyurular();
+        return renderWithSkeleton('duyuru', renderDuyurular);
       case 'kartlar':
-        return renderKartlar();
+        return renderWithSkeleton('kartlar', renderKartlar);
       case 'raporlar':
-        return renderUretimRaporlari();
+        return renderWithSkeleton('raporlar', renderUretimRaporlari);
       case 'iletisim':
-        return renderIletisim();
+        return renderWithSkeleton('iletisim', renderIletisim);
       default:
         return renderDashboard();
     }
@@ -3025,21 +3065,21 @@ export default function AdminDashboardScreen({ navigation }: AdminDashboardScree
                 {(() => {
                   switch (item.id) {
                     case 'dashboard':
-                      return renderDashboard();
+                      return renderWithSkeleton('dashboard', renderDashboard);
                     case 'personel':
-                      return renderPersoneller();
+                      return renderWithSkeleton('personel', renderPersoneller);
                     case 'ozluk':
-                      return renderOzlukBelgeleri();
+                      return renderWithSkeleton('ozluk', renderOzlukBelgeleri);
                     case 'izin':
-                      return renderIzinTalepleri();
+                      return renderWithSkeleton('izin', renderIzinTalepleri);
                     case 'duyuru':
-                      return renderDuyurular();
+                      return renderWithSkeleton('duyuru', renderDuyurular);
                     case 'kartlar':
-                      return renderKartlar();
+                      return renderWithSkeleton('kartlar', renderKartlar);
                     case 'raporlar':
-                      return renderUretimRaporlari();
+                      return renderWithSkeleton('raporlar', renderUretimRaporlari);
                     case 'iletisim':
-                      return renderIletisim();
+                      return renderWithSkeleton('iletisim', renderIletisim);
                     default:
                       return renderDashboard();
                   }
