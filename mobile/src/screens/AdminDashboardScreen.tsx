@@ -2755,9 +2755,8 @@ export default function AdminDashboardScreen({ navigation }: AdminDashboardScree
   const renderDuyurular = () => {
     return (
       <View style={styles.section}>
-        <Text style={styles.sectionTitle}>📢 Duyurular</Text>
-
-        <View style={{ flexDirection: 'row', justifyContent: 'flex-end', marginBottom: 12 }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+          <Text style={styles.sectionTitle}>📢 Duyurular</Text>
           <TouchableOpacity style={[styles.izinActionButton, styles.approveButton]} onPress={() => openDuyuruModal()}>
             <Ionicons name="add-circle-outline" size={18} color="#fff" />
             <Text style={styles.izinActionText}>Yeni Duyuru</Text>
