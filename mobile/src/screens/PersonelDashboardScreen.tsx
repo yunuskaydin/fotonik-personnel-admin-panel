@@ -111,6 +111,9 @@ export default function PersonelDashboardScreen({ navigation }: PersonelDashboar
       loadAktifKartlar();
       restoreJob();
     }
+    if (sectionNow === 'history') {
+      loadHistory();
+    }
     setActiveSection(sectionNow || 'home');
   }, [currentPageIndex]);
 
@@ -639,6 +642,48 @@ export default function PersonelDashboardScreen({ navigation }: PersonelDashboar
     </View>
   );
 
+  // Geçmiş (üretim kayıtları)
+  interface GecmisKayit { kartAd: string; adet: number; sure: number; aciklama?: string; tarih: string; urun?: string }
+  const [gecmis, setGecmis] = useState<GecmisKayit[]>([]);
+  const [gecmisLoading, setGecmisLoading] = useState(false);
+
+  const loadHistory = async () => {
+    try {
+      setGecmisLoading(true);
+      const token = await AsyncStorage.getItem('token');
+      const res = await fetch(`${API_BASE_URL}/api/uretim/personel/kayitlar`, { headers: token ? { Authorization:`Bearer ${token}` } : undefined });
+      const arr = res.ok ? await res.json() : [];
+      setGecmis(Array.isArray(arr) ? arr : []);
+    } finally {
+      setGecmisLoading(false);
+    }
+  };
+
+  const renderHistory = () => (
+    <View style={styles.section}>
+      <Text style={styles.sectionTitle}>📜 Geçmiş Kayıtlar</Text>
+      {gecmisLoading ? (
+        <View style={styles.comingSoonContainer}><Text style={styles.comingSoonText}>Yükleniyor...</Text></View>
+      ) : (
+        (gecmis.length === 0 ? (
+          <View style={styles.comingSoonContainer}>
+            <Ionicons name="time-outline" size={42} color="#154373" />
+            <Text style={styles.comingSoonText}>Kayıt bulunamadı</Text>
+          </View>
+        ) : (
+          gecmis.map((r, idx) => (
+            <View key={idx} style={styles.actionCard}>
+              <Text style={{ fontSize: 16, fontWeight: '700', color: '#0e2a47' }}>{r.kartAd}</Text>
+              <Text style={{ color: '#6b7280', marginTop: 4 }}>Adet: {r.adet} • Süre: {r.sure} dk</Text>
+              {r.aciklama ? (<Text style={{ color: '#6b7280', marginTop: 4 }}>Açıklama: {r.aciklama}</Text>) : null}
+              <Text style={{ color: '#9ca3af', fontSize: 12, marginTop: 6 }}>{new Date(r.tarih).toLocaleString()}</Text>
+            </View>
+          ))
+        ))
+      )}
+    </View>
+  );
+
   const renderDuyurular = () => (
     <View style={styles.section}>
       <Text style={styles.sectionTitle}>📢 Duyurular</Text>
@@ -1022,7 +1067,7 @@ export default function PersonelDashboardScreen({ navigation }: PersonelDashboar
                     case 'work':
                       return renderWork();
                     case 'history':
-                      return renderComingSoon('Geçmiş', '📜');
+                      return renderHistory();
                     case 'izin':
                       return renderIzin();
                     case 'duyuru':
