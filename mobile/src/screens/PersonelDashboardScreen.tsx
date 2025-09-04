@@ -14,6 +14,7 @@ import {
   TextInput,
   Platform,
   Modal,
+  Animated,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -70,6 +71,25 @@ interface IzinItem {
 export default function PersonelDashboardScreen({ navigation }: PersonelDashboardScreenProps) {
   const insets = useSafeAreaInsets();
   const [loading, setLoading] = useState(false);
+  const [sectionLoading, setSectionLoading] = useState<{[key:string]: boolean}>({});
+  const [visited, setVisited] = useState<{[key:string]: boolean}>({});
+
+  const setBusy = (key:string, val:boolean)=> setSectionLoading(p=>({...p,[key]:val}));
+
+  const SkeletonCard = () => (
+    <View style={{ backgroundColor:'#f3f4f6', borderRadius:12, padding:16, marginBottom:12 }}>
+      <View style={{ height:14, backgroundColor:'#e5e7eb', borderRadius:6, width:'55%' }} />
+      <View style={{ height:10, backgroundColor:'#e5e7eb', borderRadius:6, width:'35%', marginTop:10 }} />
+      <View style={{ height:10, backgroundColor:'#e5e7eb', borderRadius:6, width:'65%', marginTop:8 }} />
+    </View>
+  );
+  const SkeletonList = ({count=3}:{count?:number}) => (
+    <View style={{ paddingHorizontal:20, paddingTop:10 }}>{Array.from({length:count}).map((_,i)=>(<SkeletonCard key={i}/>))}</View>
+  );
+  const renderWithSkeleton = (key:string, render:()=>React.ReactElement)=>{
+    const show = !visited[key] || sectionLoading[key];
+    return show? <SkeletonList/> : render();
+  };
   const [activeSection, setActiveSection] = useState('home');
   
   // Swipe navigation refs
@@ -101,19 +121,25 @@ export default function PersonelDashboardScreen({ navigation }: PersonelDashboar
 
   useEffect(() => {
     const sectionNow = menuItems[currentPageIndex]?.id;
-    if (sectionNow === 'duyuru') {
-      loadDuyurular();
-    }
-    if (sectionNow === 'izin') {
-      loadIzinData();
-    }
-    if (sectionNow === 'work') {
-      loadAktifKartlar();
-      restoreJob();
-    }
-    if (sectionNow === 'history') {
-      loadHistory();
-    }
+    if (!sectionNow) return;
+    const first = !visited[sectionNow];
+    if (first) setBusy(sectionNow, true);
+    (async ()=>{
+      if (sectionNow === 'duyuru') {
+        await loadDuyurular();
+      }
+      if (sectionNow === 'izin') {
+        await loadIzinData();
+      }
+      if (sectionNow === 'work') {
+        await loadAktifKartlar();
+        await restoreJob();
+      }
+      if (sectionNow === 'history') {
+        if (first) { await loadHistory(); }
+      }
+      if (first) { setVisited(p=>({...p,[sectionNow]:true})); setBusy(sectionNow,false); }
+    })();
     setActiveSection(sectionNow || 'home');
   }, [currentPageIndex]);
 
@@ -451,51 +477,53 @@ export default function PersonelDashboardScreen({ navigation }: PersonelDashboar
 
   const renderHome = () => (
     <View style={styles.section}>
-      <View style={styles.welcomeBanner}>
-        <Text style={styles.welcomeText}>
-          Hoş geldiniz, {personelData?.ad} {personelData?.soyad}
-        </Text>
-      </View>
-      
-      <View style={styles.quickActions}>
-        <Text style={styles.sectionTitle}>Hızlı İşlemler</Text>
-        
-        <TouchableOpacity 
-          style={styles.actionCard}
-          onPress={() => {
-            const pageIndex = menuItems.findIndex(m => m.id === 'work');
-            scrollToPage(pageIndex);
-          }}
-        >
-          <Text style={styles.actionEmoji}>🔧</Text>
-          <Text style={styles.actionTitle}>Üretim İşleri</Text>
-          <Text style={styles.actionDesc}>Yeni iş başlat veya devam et</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity 
-          style={styles.actionCard}
-          onPress={() => {
-            const pageIndex = menuItems.findIndex(m => m.id === 'izin');
-            scrollToPage(pageIndex);
-          }}
-        >
-          <Text style={styles.actionEmoji}>📝</Text>
-          <Text style={styles.actionTitle}>İzin Talebi</Text>
-          <Text style={styles.actionDesc}>Yeni izin talebi oluştur</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity 
-          style={styles.actionCard}
-          onPress={() => {
-            const pageIndex = menuItems.findIndex(m => m.id === 'duyuru');
-            scrollToPage(pageIndex);
-          }}
-        >
-          <Text style={styles.actionEmoji}>📢</Text>
-          <Text style={styles.actionTitle}>Duyurular</Text>
-          <Text style={styles.actionDesc}>Son duyuruları görüntüle</Text>
-        </TouchableOpacity>
-      </View>
+      {(!visited['home'] || sectionLoading['home']) ? (
+        <SkeletonList count={3} />
+      ) : (
+        <>
+          <View style={styles.welcomeBanner}>
+            <Text style={styles.welcomeText}>
+              Hoş geldiniz, {personelData?.ad} {personelData?.soyad}
+            </Text>
+          </View>
+          <View style={styles.quickActions}>
+            <Text style={styles.sectionTitle}>Hızlı İşlemler</Text>
+            <TouchableOpacity 
+              style={styles.actionCard}
+              onPress={() => {
+                const pageIndex = menuItems.findIndex(m => m.id === 'work');
+                scrollToPage(pageIndex);
+              }}
+            >
+              <Text style={styles.actionEmoji}>🔧</Text>
+              <Text style={styles.actionTitle}>Üretim İşleri</Text>
+              <Text style={styles.actionDesc}>Yeni iş başlat veya devam et</Text>
+            </TouchableOpacity>
+            <TouchableOpacity 
+              style={styles.actionCard}
+              onPress={() => {
+                const pageIndex = menuItems.findIndex(m => m.id === 'izin');
+                scrollToPage(pageIndex);
+              }}
+            >
+              <Text style={styles.actionEmoji}>📝</Text>
+              <Text style={styles.actionTitle}>İzin Talebi</Text>
+              <Text style={styles.actionDesc}>Yeni izin talebi oluştur</Text>
+            </TouchableOpacity>
+            <TouchableOpacity 
+              style={styles.actionCard}
+              onPress={() => {
+                const pageIndex = menuItems.findIndex(m => m.id === 'duyuru');
+                scrollToPage(pageIndex);
+              }}
+            >
+              <Text style={styles.actionEmoji}>📢</Text>
+              <Text style={styles.actionTitle}>Duyurular</Text>
+              <Text style={styles.actionDesc}>Son duyuruları görüntüle</Text>
+            </TouchableOpacity>
+          </View>
+        </>
+      )}
     </View>
   );
 
@@ -1063,15 +1091,15 @@ export default function PersonelDashboardScreen({ navigation }: PersonelDashboar
                 {(() => {
                   switch (item.id) {
                     case 'home':
-                      return renderHome();
+                      return renderWithSkeleton('home', renderHome);
                     case 'work':
-                      return renderWork();
+                      return renderWithSkeleton('work', renderWork);
                     case 'history':
-                      return renderHistory();
+                      return renderWithSkeleton('history', renderHistory);
                     case 'izin':
-                      return renderIzin();
+                      return renderWithSkeleton('izin', renderIzin);
                     case 'duyuru':
-                      return renderDuyurular();
+                      return renderWithSkeleton('duyuru', renderDuyurular);
                     case 'iletisim':
                       return renderIletisim();
                     default:
