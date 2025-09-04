@@ -1114,7 +1114,7 @@ export default function PersonelDashboardScreen({ navigation }: PersonelDashboar
         </ScrollView>
 
         {/* Bottom Tab Navigation */}
-        <View style={[styles.bottomTabContainer, { paddingBottom: Math.max(insets.bottom, 5) + 8 }] }>
+        <View style={[styles.bottomTabContainer, { paddingBottom: Math.max(insets.bottom, 2) + 2 }] }>
           <ScrollView 
             horizontal 
             showsHorizontalScrollIndicator={false}
