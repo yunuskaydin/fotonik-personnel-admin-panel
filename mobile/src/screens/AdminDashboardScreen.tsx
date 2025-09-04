@@ -273,6 +273,10 @@ export default function AdminDashboardScreen({ navigation }: AdminDashboardScree
         } else if (sectionNow === 'iletisim') {
           await loadIletisimMesajlari();
         } else if (sectionNow === 'izin') {
+          // Reset to defaults on each enter
+          setIzinFilters({ ay: 'Tümü', yil: 'Tümü', personelId: '', tur: '', durum: '' });
+          setIzinDisplayed([]);
+          setIzinQueried(false);
           await Promise.all([loadIzinTalepleri(), loadIzinTurleri()]);
         } else if (sectionNow === 'duyuru') {
           await loadDuyurular();
@@ -3090,7 +3094,7 @@ export default function AdminDashboardScreen({ navigation }: AdminDashboardScree
         </ScrollView>
 
         {/* Bottom Tab Navigation */}
-        <View style={[styles.bottomTabContainer, { paddingBottom: Math.max(insets.bottom, 5) + 8 }]}>
+        <View style={[styles.bottomTabContainer, { paddingBottom: Math.max(insets.bottom, 2) + 2 }]}>
           <View style={styles.bottomTabContent}>
             {menuItems.map((item, index) => (
               <TouchableOpacity
@@ -3516,7 +3520,7 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.1,
     shadowRadius: 3.84,
     elevation: 5,
-    paddingTop: 6,
+    paddingTop: 2,
     paddingLeft: 0,
     paddingRight: 12,
   },
@@ -3524,7 +3528,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingVertical: 4,
+    paddingVertical: 2,
     paddingLeft: 6,
     paddingRight: 0,
     minHeight: 44,
