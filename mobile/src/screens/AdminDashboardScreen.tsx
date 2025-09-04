@@ -281,7 +281,7 @@ export default function AdminDashboardScreen({ navigation }: AdminDashboardScree
         } else if (sectionNow === 'duyuru') {
           await loadDuyurular();
         } else if (sectionNow === 'kartlar') {
-          await loadKartlar();
+          if (firstVisit) { await loadKartlar(); }
         } else if (sectionNow === 'raporlar') {
           await loadReportsMeta();
         }
