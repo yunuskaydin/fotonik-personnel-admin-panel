@@ -1,3 +1,14 @@
 [
-  
+  {
+    "id": "df5f8f47-050a-421f-a21b-cab0782d6dd0",
+    "kartId": "33695ede-f12b-4d15-8b8a-35866f5164da",
+    "kartAd": "Kart 1",
+    "personelId": 1756470781205,
+    "personelAd": "Yunus Kağan",
+    "adet": 12,
+    "sure": 0,
+    "molalar": [],
+    "tarih": "2025-09-04T08:06:07.595Z",
+    "aciklama": "description"
+  }
 ]

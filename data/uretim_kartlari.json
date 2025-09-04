@@ -3,10 +3,10 @@
     "id": "33695ede-f12b-4d15-8b8a-35866f5164da",
     "ad": "Kart 1",
     "hedef": 15,
-    "tamamlandi": true,
+    "tamamlandi": false,
     "aktif": true,
     "aciklama": "Kart description.",
-    "topAdet": 0,
-    "kalan": 15
+    "topAdet": 12,
+    "kalan": 3
   }
 ]
