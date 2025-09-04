@@ -253,6 +253,8 @@ export default function AdminDashboardScreen({ navigation }: AdminDashboardScree
       loadDuyurular();
     } else if (sectionNow === 'kartlar') {
       loadKartlar();
+    } else if (sectionNow === 'raporlar') {
+      loadReportsMeta();
     }
     
     // Update page index when activeSection changes via bottom navigation
@@ -2067,6 +2069,175 @@ export default function AdminDashboardScreen({ navigation }: AdminDashboardScree
     </View>
   );
 
+  // ÜRETİM RAPORLARI
+  interface RaporDetay { kartAd: string; personelAd: string; adet: number; sure: number; verim: number; tarih: string; aciklama?: string }
+  const ALL = '__ALL__';
+  const [raporFilters, setRaporFilters] = useState({ yil: '', ay: '', kartId: '', personelId: '' });
+  const [raporCards, setRaporCards] = useState<{ id: string; ad: string }[]>([]);
+  const [raporPersons, setRaporPersons] = useState<{ id: number; ad: string; soyad?: string }[]>([]);
+  const [raporDetay, setRaporDetay] = useState<RaporDetay[]>([]);
+  const [raporOzet, setRaporOzet] = useState<{ topAdet: number; topSure: number } | null>(null);
+  const [raporLoading, setRaporLoading] = useState(false);
+  const [openYear, setOpenYear] = useState(false);
+  const [openMonth, setOpenMonth] = useState(false);
+  const [openCard, setOpenCard] = useState(false);
+  const [openPerson, setOpenPerson] = useState(false);
+
+  const loadReportsMeta = async () => {
+    try {
+      const token = await AsyncStorage.getItem('token');
+      const [kcRes, rkRes, authRes] = await Promise.all([
+        fetch(`${API_BASE_URL}/api/uretim/kartlar`,{ headers:{ Authorization:`Bearer ${token}` }}),
+        fetch(`${API_BASE_URL}/api/uretim/raporlar/kartlar`,{ headers:{ Authorization:`Bearer ${token}` }}),
+        fetch(`${API_BASE_URL}/api/personel`,{ headers:{ Authorization:`Bearer ${token}` }})
+      ]);
+      const cards = kcRes.ok?await kcRes.json():[];
+      const rapCards = rkRes.ok?await rkRes.json():[];
+      const persons = authRes.ok?await authRes.json():[];
+      const seen = new Set<string>();
+      const merged = cards.concat(rapCards).filter((c:any)=>{ if(seen.has(c.id)) return false; seen.add(c.id); return true; });
+      setRaporCards(merged.map((c:any)=>({ id:c.id, ad:c.ad })));
+      setRaporPersons(persons.map((p:any)=>({ id:p.id, ad:p.ad||p.soyad })));
+    } catch {}
+  };
+
+  const fetchReports = async () => {
+    try {
+      setRaporLoading(true);
+      const token = await AsyncStorage.getItem('token');
+      const paramsObj: any = {
+        yil: raporFilters.yil === ALL ? '' : raporFilters.yil,
+        ay: raporFilters.ay === ALL ? '' : raporFilters.ay,
+        kartId: raporFilters.kartId === ALL ? '' : raporFilters.kartId,
+        personelId: raporFilters.personelId === ALL ? '' : raporFilters.personelId,
+      };
+      const params = new URLSearchParams(paramsObj);
+      const res = await fetch(`${API_BASE_URL}/api/uretim/istatistik?${params.toString()}`,{ headers:{ Authorization:`Bearer ${token}` }});
+      if(!res.ok) { Alert.alert('Hata','Rapor alınamadı'); return; }
+      const { ozet, detay } = await res.json();
+      setRaporOzet(ozet); setRaporDetay(detay||[]);
+    } catch {} finally { setRaporLoading(false); }
+  };
+
+  const renderUretimRaporlari = () => (
+    <View style={styles.section}>
+      <Text style={styles.sectionTitle}>📊 Üretim Raporları</Text>
+      <View style={{ flexDirection:'row', gap:8, marginBottom:8 }}>
+        <TouchableOpacity onPress={()=>setOpenYear(true)} style={{ flex:1, borderWidth:1, borderColor:'#d0d0d0', borderRadius:8, padding:12, backgroundColor:'#fff' }}>
+          <Text style={{ color:'#374151' }}>{raporFilters.yil === '' ? 'Yıl Seç' : raporFilters.yil === ALL ? 'Tüm Yıllar' : raporFilters.yil}</Text>
+        </TouchableOpacity>
+        <TouchableOpacity onPress={()=>setOpenMonth(true)} style={{ flex:1, borderWidth:1, borderColor:'#d0d0d0', borderRadius:8, padding:12, backgroundColor:'#fff' }}>
+          <Text style={{ color:'#374151' }}>{raporFilters.ay === '' ? 'Ay Seç' : raporFilters.ay === ALL ? 'Tüm Aylar' : raporFilters.ay}</Text>
+        </TouchableOpacity>
+      </View>
+      <View style={{ flexDirection:'row', gap:8, marginBottom:10 }}>
+        <TouchableOpacity onPress={()=>setOpenCard(true)} style={{ flex:1, borderWidth:1, borderColor:'#d0d0d0', borderRadius:8, padding:12, backgroundColor:'#fff' }}>
+          <Text style={{ color:'#374151' }}>{raporFilters.kartId === '' ? 'Kart Seç' : raporFilters.kartId === ALL ? 'Tüm Kartlar' : (raporCards.find(c=>c.id===raporFilters.kartId)?.ad || 'Kart')}</Text>
+        </TouchableOpacity>
+        <TouchableOpacity onPress={()=>setOpenPerson(true)} style={{ flex:1, borderWidth:1, borderColor:'#d0d0d0', borderRadius:8, padding:12, backgroundColor:'#fff' }}>
+          <Text style={{ color:'#374151' }}>{raporFilters.personelId === '' ? 'Personel Seç' : raporFilters.personelId === ALL ? 'Tüm Personeller' : (raporPersons.find(p=>String(p.id)===raporFilters.personelId)?.ad || 'Personel')}</Text>
+        </TouchableOpacity>
+      </View>
+      <TouchableOpacity style={styles.primaryButton} onPress={fetchReports}><Text style={styles.primaryButtonText}>Raporu Getir</Text></TouchableOpacity>
+      {raporOzet && (
+        <Text style={{ fontWeight:'700', marginTop:10 }}>Toplam Adet: {raporOzet.topAdet} | Toplam Süre: {raporOzet.topSure} dk</Text>
+      )}
+      <View style={{ marginTop:8 }}>
+        {raporLoading ? (
+          <Text style={{ color:'#6b7280' }}>Yükleniyor...</Text>
+        ) : (
+          raporDetay.map((r,idx)=>(
+            <View key={idx} style={styles.card}>
+              <Text style={styles.cardTitle}>{r.kartAd}</Text>
+              <Text style={{ color:'#6b7280' }}>Personel: {r.personelAd}</Text>
+              <Text style={{ color:'#6b7280' }}>Adet: {r.adet} | Süre: {r.sure} | Verim: {r.verim}</Text>
+              <Text style={{ color:'#6b7280' }}>Tarih: {new Date(r.tarih).toLocaleString()}</Text>
+              <Text style={{ color:'#6b7280' }}>{r.aciklama||'–'}</Text>
+            </View>
+          ))
+        )}
+      </View>
+      {/* Year Dropdown */}
+      <Modal visible={openYear} transparent animationType="fade" onRequestClose={()=>setOpenYear(false)}>
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContainer, { height: '50%' }] }>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Yıl Seç</Text>
+              <TouchableOpacity onPress={()=>setOpenYear(false)}><Ionicons name="close-outline" size={28} color="#6b7280" /></TouchableOpacity>
+            </View>
+            <ScrollView style={{ padding: 12 }}>
+              {(()=>{ const y = new Date().getFullYear(); const arr = [ALL,''+y]; for(let i=1;i<=10;i++) arr.push(String(y-i)); return arr; })().map(val=> (
+                <TouchableOpacity key={val||'all'} onPress={()=>{ setRaporFilters({...raporFilters, yil: val }); setOpenYear(false); }} style={{ paddingVertical:12 }}>
+                  <Text style={{ color: val!==ALL? '#374151':'#1761a0', fontWeight: val!==ALL? '500':'700' }}>{val!==ALL? val : 'Tümü'}</Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+      {/* Month Dropdown */}
+      <Modal visible={openMonth} transparent animationType="fade" onRequestClose={()=>setOpenMonth(false)}>
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContainer, { height: '50%' }] }>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Ay Seç</Text>
+              <TouchableOpacity onPress={()=>setOpenMonth(false)}><Ionicons name="close-outline" size={28} color="#6b7280" /></TouchableOpacity>
+            </View>
+            <ScrollView style={{ padding: 12 }}>
+              {[ALL,'01','02','03','04','05','06','07','08','09','10','11','12'].map(m => (
+                <TouchableOpacity key={m||'all'} onPress={()=>{ setRaporFilters({...raporFilters, ay: m }); setOpenMonth(false); }} style={{ paddingVertical:12 }}>
+                  <Text style={{ color: m!==ALL? '#374151':'#1761a0', fontWeight: m!==ALL? '500':'700' }}>{m!==ALL? m : 'Tümü'}</Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+      {/* Card Dropdown */}
+      <Modal visible={openCard} transparent animationType="fade" onRequestClose={()=>setOpenCard(false)}>
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContainer, { height: '60%' }] }>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Kart Seç</Text>
+              <TouchableOpacity onPress={()=>setOpenCard(false)}><Ionicons name="close-outline" size={28} color="#6b7280" /></TouchableOpacity>
+            </View>
+            <ScrollView style={{ padding: 12 }}>
+              <TouchableOpacity onPress={()=>{ setRaporFilters({...raporFilters, kartId: ALL }); setOpenCard(false); }} style={{ paddingVertical:12 }}>
+                <Text style={{ color:'#1761a0', fontWeight:'700' }}>Tümü</Text>
+              </TouchableOpacity>
+              {raporCards.map(c => (
+                <TouchableOpacity key={c.id} onPress={()=>{ setRaporFilters({...raporFilters, kartId: c.id }); setOpenCard(false); }} style={{ paddingVertical:12 }}>
+                  <Text style={{ color:'#374151' }}>{c.ad}</Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+      {/* Person Dropdown */}
+      <Modal visible={openPerson} transparent animationType="fade" onRequestClose={()=>setOpenPerson(false)}>
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContainer, { height: '60%' }] }>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Personel Seç</Text>
+              <TouchableOpacity onPress={()=>setOpenPerson(false)}><Ionicons name="close-outline" size={28} color="#6b7280" /></TouchableOpacity>
+            </View>
+            <ScrollView style={{ padding: 12 }}>
+              <TouchableOpacity onPress={()=>{ setRaporFilters({...raporFilters, personelId: ALL }); setOpenPerson(false); }} style={{ paddingVertical:12 }}>
+                <Text style={{ color:'#1761a0', fontWeight:'700' }}>Tümü</Text>
+              </TouchableOpacity>
+              {raporPersons.map(p => (
+                <TouchableOpacity key={p.id} onPress={()=>{ setRaporFilters({...raporFilters, personelId: String(p.id) }); setOpenPerson(false); }} style={{ paddingVertical:12 }}>
+                  <Text style={{ color:'#374151' }}>{p.ad}</Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+    </View>
+  );
+
   const renderIletisim = () => {
     const messageTypes = ['Tümü', 'Görüş', 'Öneri', 'Şikayet'];
     
@@ -2720,7 +2891,7 @@ export default function AdminDashboardScreen({ navigation }: AdminDashboardScree
       case 'kartlar':
         return renderKartlar();
       case 'raporlar':
-        return renderComingSoon('📊 Üretim Raporları');
+        return renderUretimRaporlari();
       case 'iletisim':
         return renderIletisim();
       default:
@@ -2761,8 +2932,15 @@ export default function AdminDashboardScreen({ navigation }: AdminDashboardScree
                     refreshing={loading || (menuItems[index].id === 'kartlar' && kartLoading)}
                     onRefresh={() => {
                       loadStats();
-                      if (menuItems[index].id === 'kartlar') {
+                      const sec = menuItems[index].id;
+                      if (sec === 'kartlar') {
                         loadKartlar();
+                      } else if (sec === 'raporlar') {
+                        // reset dropdowns to defaults
+                        setRaporFilters({ yil: '', ay: '', kartId: '', personelId: '' });
+                        loadReportsMeta();
+                        setRaporDetay([]);
+                        setRaporOzet(null);
                       }
                     }}
                   />
@@ -2783,7 +2961,7 @@ export default function AdminDashboardScreen({ navigation }: AdminDashboardScree
                     case 'kartlar':
                       return renderKartlar();
                     case 'raporlar':
-                      return renderComingSoon('📊 Üretim Raporları');
+                      return renderUretimRaporlari();
                     case 'iletisim':
                       return renderIletisim();
                     default:
@@ -3298,6 +3476,17 @@ const styles = StyleSheet.create({
   addButtonText: {
     color: '#fff',
     fontWeight: '600',
+  },
+  primaryButton: {
+    backgroundColor: '#1761a0',
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    borderRadius: 8,
+    alignSelf: 'flex-start',
+  },
+  primaryButtonText: {
+    color: '#fff',
+    fontWeight: '700',
   },
   statsContainer: {
     flexDirection: 'column',
