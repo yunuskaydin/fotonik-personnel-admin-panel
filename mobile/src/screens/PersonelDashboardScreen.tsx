@@ -459,7 +459,10 @@ export default function PersonelDashboardScreen({ navigation }: PersonelDashboar
         
         <TouchableOpacity 
           style={styles.actionCard}
-          onPress={() => setActiveSection('work')}
+          onPress={() => {
+            const pageIndex = menuItems.findIndex(m => m.id === 'work');
+            scrollToPage(pageIndex);
+          }}
         >
           <Text style={styles.actionEmoji}>🔧</Text>
           <Text style={styles.actionTitle}>Üretim İşleri</Text>
@@ -468,7 +471,10 @@ export default function PersonelDashboardScreen({ navigation }: PersonelDashboar
 
         <TouchableOpacity 
           style={styles.actionCard}
-          onPress={() => setActiveSection('izin')}
+          onPress={() => {
+            const pageIndex = menuItems.findIndex(m => m.id === 'izin');
+            scrollToPage(pageIndex);
+          }}
         >
           <Text style={styles.actionEmoji}>📝</Text>
           <Text style={styles.actionTitle}>İzin Talebi</Text>
@@ -477,7 +483,10 @@ export default function PersonelDashboardScreen({ navigation }: PersonelDashboar
 
         <TouchableOpacity 
           style={styles.actionCard}
-          onPress={() => setActiveSection('duyuru')}
+          onPress={() => {
+            const pageIndex = menuItems.findIndex(m => m.id === 'duyuru');
+            scrollToPage(pageIndex);
+          }}
         >
           <Text style={styles.actionEmoji}>📢</Text>
           <Text style={styles.actionTitle}>Duyurular</Text>
