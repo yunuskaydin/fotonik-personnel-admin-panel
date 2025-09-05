@@ -23,8 +23,13 @@
     },
     "ios": {
       "supportsTablet": true,
+      "bundleIdentifier": "com.yunuskaydin.fotonikapp",
+      "buildNumber": "1",
       "infoPlist": {
-        "NSPhotoLibraryAddUsageDescription": "Duyuru görsellerini/vidyolarını galerinize kaydedebilmemiz için fotoğraf arşivinize ekleme izni gerekli."
+        "NSPhotoLibraryAddUsageDescription": "Duyuru görsellerini/vidyolarını galerinize kaydedebilmemiz için fotoğraf arşivinize ekleme izni gerekli.",
+        "NSAppTransportSecurity": {
+          "NSAllowsArbitraryLoads": true
+        }
       }
     },
     "android": {

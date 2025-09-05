@@ -6,7 +6,8 @@
         "ios": { "simulator": true }
       },
       "production": {
-        "android": { "gradleCommand": ":app:bundleRelease" }
+        "android": { "gradleCommand": ":app:bundleRelease" },
+        "ios": { "buildType": "archive" }
       }
     },
     "submit": { "production": {} }
