@@ -7,7 +7,7 @@
       },
       "production": {
         "android": { "gradleCommand": ":app:bundleRelease" },
-        "ios": { "buildType": "archive" }
+        "ios": { "distribution": "store" }
       }
     },
     "submit": { "production": {} }
