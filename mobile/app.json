@@ -1,7 +1,7 @@
 {
   "expo": {
     "name": "Fotonik App",
-    "slug": "Fotonik App",
+    "slug": "fotonik-app",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/fotonik-logo.png",
@@ -27,10 +27,16 @@
       "permissions": [
         "READ_MEDIA_IMAGES",
         "READ_MEDIA_VIDEO"
-      ]
+      ],
+      "package": "com.yunuskaydin.fotonikapp"
     },
     "web": {
       "favicon": "./assets/fotonik-logo.png"
+    },
+    "extra": {
+      "eas": {
+        "projectId": "deb3619f-3b8e-4375-9cdd-03aa8ce69c45"
+      }
     }
   }
 }
