@@ -1,0 +1,9 @@
+mobile/
+docs/
+.git/
+.gitignore
+README.md
+amplify.yml
+env.example
+node_modules/
+*.log
