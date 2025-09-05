@@ -4,7 +4,7 @@
     "slug": "fotonik-app",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/fotonik-logo.png",
+    "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
     "newArchEnabled": true,
     "splash": {
@@ -20,7 +20,7 @@
     },
     "android": {
       "adaptiveIcon": {
-        "foregroundImage": "./assets/fotonik-logo.png",
+        "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#234060"
       },
       "edgeToEdgeEnabled": true,
