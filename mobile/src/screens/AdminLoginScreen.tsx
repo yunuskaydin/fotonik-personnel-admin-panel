@@ -42,9 +42,9 @@ export default function AdminLoginScreen({ navigation }: AdminLoginScreenProps) 
       }
 
       const loginData: AdminLoginData = { username: username.trim(), password };
-      console.log('Admin login attempt:', { username: loginData.username });
+      //console.log('Admin login attempt:', { username: loginData.username });
       const response = await authService.adminLogin(loginData);
-      console.log('Admin login response:', response);
+      //console.log('Admin login response:', response);
       
       // Response kontrolü
       if (!response || !response.token) {
