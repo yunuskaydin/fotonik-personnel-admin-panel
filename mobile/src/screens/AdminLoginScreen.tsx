@@ -42,7 +42,9 @@ export default function AdminLoginScreen({ navigation }: AdminLoginScreenProps) 
       }
 
       const loginData: AdminLoginData = { username: username.trim(), password };
+      console.log('Admin login attempt:', { username: loginData.username });
       const response = await authService.adminLogin(loginData);
+      console.log('Admin login response:', response);
       
       // Response kontrolü
       if (!response || !response.token) {
@@ -58,16 +60,19 @@ export default function AdminLoginScreen({ navigation }: AdminLoginScreenProps) 
       navigation.navigate('AdminDashboard');
       
     } catch (error: any) {
+      let errorMessage = 'Giriş başarısız.';
       
       if (error.code === 'ECONNABORTED') {
-        Alert.alert('Hata', 'Bağlantı zaman aşımı. Lütfen tekrar deneyin.');
+        errorMessage = 'Bağlantı zaman aşımı. Lütfen tekrar deneyin.';
       } else if (error.message === 'Network Error') {
-        Alert.alert('Hata', 'Ağ bağlantısı hatası. Sunucu çalışıyor mu kontrol edin.');
+        errorMessage = 'Ağ bağlantısı hatası. Sunucu çalışıyor mu kontrol edin.';
       } else if (error.response) {
-        Alert.alert('Hata', error.response.data?.message || 'Giriş başarısız.');
-      } else {
-        Alert.alert('Hata', 'Bilinmeyen bir hata oluştu.');
+        errorMessage = error.response.data?.message || `Sunucu hatası (${error.response.status}).`;
+      } else if (error.message) {
+        errorMessage = error.message;
       }
+      
+      Alert.alert('Hata', errorMessage);
     } finally {
       setLoading(false);
     }

@@ -52,8 +52,6 @@ export default function PersonelLoginScreen({ navigation }: PersonelLoginScreenP
       navigation.navigate('PersonelDashboard');
       
     } catch (error: any) {
-      console.error('Personel login error:', error);
-      
       let errorMessage = 'Giriş başarısız.';
       
       if (error.code === 'ECONNABORTED') {
