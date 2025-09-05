@@ -3,8 +3,18 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Platform } from 'react-native';
 import { PersonelLoginData, AdminLoginData, LoginResponse } from '../types';
 
-// Android emülatör için 10.0.2.2, iOS simulator için localhost
-export const API_BASE_URL = Platform.OS === 'android' ? 'http://192.168.1.128:3000' : 'http://localhost:3000';
+// Environment-based API URL configuration
+const getApiBaseUrl = () => {
+  // Development URLs
+  if (__DEV__) {
+    return Platform.OS === 'android' ? 'http://192.168.1.128:3000' : 'http://localhost:3000';
+  }
+  
+  // Production URL - AWS Amplify
+  return 'https://main.d1va1crvvuu8dy.amplifyapp.com';
+};
+
+export const API_BASE_URL = getApiBaseUrl();
 
 const api = axios.create({
   baseURL: API_BASE_URL,
