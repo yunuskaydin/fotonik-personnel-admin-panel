@@ -28,7 +28,8 @@
         "READ_MEDIA_IMAGES",
         "READ_MEDIA_VIDEO"
       ],
-      "package": "com.yunuskaydin.fotonikapp"
+      "package": "com.yunuskaydin.fotonikapp",
+      "usesCleartextTraffic": true
     },
     "web": {
       "favicon": "./assets/fotonik-logo.png"
