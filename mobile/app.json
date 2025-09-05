@@ -9,7 +9,12 @@
     "newArchEnabled": true,
     "plugins": [
       ["expo-build-properties", 
-        { "android": { "usesCleartextTraffic": true } }]
+        { 
+          "android": { 
+            "usesCleartextTraffic": true,
+            "networkSecurityConfig": "network_security_config.xml"
+          } 
+        }]
     ],
     "splash": {
       "image": "./assets/fotonik-logo.png",

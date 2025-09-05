@@ -34,6 +34,13 @@ export default function PersonelLoginScreen({ navigation }: PersonelLoginScreenP
 
     setLoading(true);
     try {
+      // Önce bağlantıyı test et
+      const connectionOk = await authService.testConnection();
+      if (!connectionOk) {
+        Alert.alert('Hata', 'Sunucuya bağlanılamıyor. Lütfen internet bağlantınızı kontrol edin.');
+        return;
+      }
+
       const loginData: PersonelLoginData = { email: email.trim(), password };
       const response = await authService.personelLogin(loginData);
       
@@ -45,7 +52,21 @@ export default function PersonelLoginScreen({ navigation }: PersonelLoginScreenP
       navigation.navigate('PersonelDashboard');
       
     } catch (error: any) {
-      Alert.alert('Hata', error.response?.data?.message || 'Giriş başarısız.');
+      console.error('Personel login error:', error);
+      
+      let errorMessage = 'Giriş başarısız.';
+      
+      if (error.code === 'ECONNABORTED') {
+        errorMessage = 'Bağlantı zaman aşımı. Lütfen tekrar deneyin.';
+      } else if (error.message === 'Network Error') {
+        errorMessage = 'Ağ bağlantısı hatası. Sunucu çalışıyor mu kontrol edin.';
+      } else if (error.response) {
+        errorMessage = error.response.data?.message || `Sunucu hatası (${error.response.status}).`;
+      } else if (error.message) {
+        errorMessage = error.message;
+      }
+      
+      Alert.alert('Hata', errorMessage);
     } finally {
       setLoading(false);
     }

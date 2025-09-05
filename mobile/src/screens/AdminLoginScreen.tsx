@@ -34,6 +34,13 @@ export default function AdminLoginScreen({ navigation }: AdminLoginScreenProps) 
 
     setLoading(true);
     try {
+      // Önce bağlantıyı test et
+      const connectionOk = await authService.testConnection();
+      if (!connectionOk) {
+        Alert.alert('Hata', 'Sunucuya bağlanılamıyor. Lütfen internet bağlantınızı kontrol edin.');
+        return;
+      }
+
       const loginData: AdminLoginData = { username: username.trim(), password };
       const response = await authService.adminLogin(loginData);
       
