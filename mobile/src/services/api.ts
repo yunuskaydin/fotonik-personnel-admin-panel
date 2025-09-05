@@ -11,7 +11,7 @@ const getApiBaseUrl = () => {
   }
   
   // Production URL - AWS Amplify
-  return 'https://Fotonik-backend-env.eba-zqqvhjqa.eu-north-1.elasticbeanstalk.com ';
+  return 'http://Fotonik-backend-env.eba-zqqvhjqa.eu-north-1.elasticbeanstalk.com ';
 };
 
 export const API_BASE_URL = getApiBaseUrl();

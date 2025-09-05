@@ -7,6 +7,10 @@
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
     "newArchEnabled": true,
+    "plugins": "plugins": [
+      ["expo-build-properties", 
+      { "android": { "usesCleartextTraffic": true } }]
+    ],
     "splash": {
       "image": "./assets/fotonik-logo.png",
       "resizeMode": "contain",
@@ -28,8 +32,7 @@
         "READ_MEDIA_IMAGES",
         "READ_MEDIA_VIDEO"
       ],
-      "package": "com.yunuskaydin.fotonikapp",
-      "usesCleartextTraffic": true
+      "package": "com.yunuskaydin.fotonikapp"
     },
     "web": {
       "favicon": "./assets/fotonik-logo.png"
