@@ -8,13 +8,15 @@
     "userInterfaceStyle": "light",
     "newArchEnabled": true,
     "plugins": [
-      ["expo-build-properties", 
-        { 
-          "android": { 
+      [
+        "expo-build-properties",
+        {
+          "android": {
             "usesCleartextTraffic": true,
             "networkSecurityConfig": "network_security_config.xml"
-          } 
-        }]
+          }
+        }
+      ]
     ],
     "splash": {
       "image": "./assets/fotonik-logo.png",
@@ -29,7 +31,8 @@
         "NSPhotoLibraryAddUsageDescription": "Duyuru görsellerini/vidyolarını galerinize kaydedebilmemiz için fotoğraf arşivinize ekleme izni gerekli.",
         "NSAppTransportSecurity": {
           "NSAllowsArbitraryLoads": true
-        }
+        },
+        "ITSAppUsesNonExemptEncryption": false
       }
     },
     "android": {
