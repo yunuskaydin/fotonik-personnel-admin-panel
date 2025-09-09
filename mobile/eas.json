@@ -3,7 +3,7 @@
     "build": {
       "preview": {
         "android": { "buildType": "apk" }, 
-        "ios": { "distribution": "internal" }
+        "ios": { "simulator": true }
       },
       "production": {
         "android": { "gradleCommand": ":app:bundleRelease" },
