@@ -138,7 +138,8 @@
         <form id="personelForm" class="hidden mb-6 bg-white p-6 shadow rounded-lg">
           <input type="hidden" id="pid">
           <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <input type="text" id="pAd" placeholder="Ad Soyad" class="border p-2 rounded w-full" required>
+            <input type="text" id="pAd" placeholder="Ad" class="border p-2 rounded w-full" required>
+            <input type="text" id="pSoyad" placeholder="Soyad" class="border p-2 rounded w-full" required>
             <input type="text" id="pEgitim" placeholder="Eğitim" class="border p-2 rounded w-full" required>
             <input type="text" id="pGorev" placeholder="Unvan" class="border p-2 rounded w-full" required>
             <input type="date" id="pBaslama" class="border p-2 rounded w-full" required>
@@ -332,7 +333,9 @@ document.querySelectorAll('.side-menu-btn').forEach(btn=>{
   // --- GENEL ---
  // =============== GENEL ===============
 const token = localStorage.getItem('token');
-if (!token && !location.pathname.endsWith('/admin/login.html')) location = '/admin/login.html';
+if (!token && !location.pathname.endsWith('/admin/login.html')) {
+  location = '/admin/login.html';
+}
 
 const $ = id => document.getElementById(id);
 const sections = [
@@ -357,15 +360,47 @@ function logout(){ localStorage.removeItem('token'); location = '/admin/login.ht
 // =============== DASHBOARD ===============
 async function loadStats(){
   try {
-    const [ps, iz, uretim] = await Promise.all([
-      fetch('/api/personel',{headers:{Authorization:'Bearer '+token}}).then(r=>r.json()),
-      fetch('/api/izin',{headers:{Authorization:'Bearer '+token}}).then(r=>r.json()),
-      fetch('/api/uretim/istatistik',{headers:{Authorization:'Bearer '+token}}).then(r=>r.json())
+    const [psRes, izRes, uretimRes] = await Promise.all([
+      fetch('/api/personel',{headers:{Authorization:'Bearer '+token}}),
+      fetch('/api/izin/all',{headers:{Authorization:'Bearer '+token}}),
+      fetch('/api/uretim/istatistik',{headers:{Authorization:'Bearer '+token}})
     ]);
-    $('statToplam').textContent = ps.length;
-    $('statRapor').textContent   = uretim?.ozet?.totalReports || '—';
-    $('statIzin').textContent    = iz.filter(i=>i.durum==='Beklemede').length;
-  } catch {}
+    
+    if (psRes.status === 401 || izRes.status === 401 || uretimRes.status === 401) {
+      localStorage.removeItem('token');
+      location = '/admin/login.html';
+      return;
+    }
+    
+    if (!psRes.ok) {
+      console.error('Personel yükleme hatası:', psRes.status, await psRes.text());
+      $('statToplam').textContent = '—';
+    } else {
+      const ps = await psRes.json();
+      $('statToplam').textContent = ps.length;
+    }
+    
+    if (!izRes.ok) {
+      console.error('İzin yükleme hatası:', izRes.status, await izRes.text());
+      $('statIzin').textContent = '—';
+    } else {
+      const iz = await izRes.json();
+      $('statIzin').textContent = iz.filter(i=>i.durum==='Beklemede').length;
+    }
+    
+    if (!uretimRes.ok) {
+      console.error('Üretim istatistik hatası:', uretimRes.status, await uretimRes.text());
+      $('statRapor').textContent = '—';
+    } else {
+      const uretim = await uretimRes.json();
+      $('statRapor').textContent = uretim?.ozet?.totalReports || '—';
+    }
+  } catch (e) {
+    console.error('loadStats hatası:', e);
+    $('statToplam').textContent = '—';
+    $('statRapor').textContent = '—';
+    $('statIzin').textContent = '—';
+  }
 }
 
 // =============== PERSONEL MODÜLÜ ===============
@@ -375,6 +410,7 @@ function openPersonelForm(mode,p=null){
   if(mode==='duzenle' && p){
     $('pid').value      = p.id;
     $('pAd').value      = p.ad;
+    $('pSoyad').value   = p.soyad || '';
     $('pEgitim').value  = p.egitim;
     $('pGorev').value   = p.gorev;
     $('pBaslama').value = p.baslama;
@@ -383,39 +419,63 @@ function openPersonelForm(mode,p=null){
 function cancelPersonel(){ resetPersonelForm(); }
 function resetPersonelForm(){
   $('personelForm').classList.add('hidden');
-  ['pid','pAd','pEgitim','pGorev','pBaslama','pFoto'].forEach(id=>$(id).value='');
+  ['pid','pAd','pSoyad','pEgitim','pGorev','pBaslama','pFoto'].forEach(id=>$(id).value='');
 }
 async function loadPersoneller(){
-  const data = await fetch('/api/personel',{headers:{Authorization:'Bearer '+token}}).then(r=>r.json());
-  const out = $('personelList'); out.innerHTML = '';
-  data.forEach(p=>{
-    const d = document.createElement('div');
-    d.className = 'bg-white p-4 shadow rounded-lg flex justify-between items-center';
-    d.innerHTML = `
-      <div class="flex items-center gap-4">
-        <img src="/uploads/${p.foto||'default.png'}" class="w-16 h-16 rounded-full object-cover">
-        <div>
-          <p class="font-semibold">${p.ad}</p>
-          <p class="text-sm text-gray-500">Eğitim: ${p.egitim}</p>
-          <p class="text-sm text-gray-500">Unvan: ${p.gorev}</p>
-          <p class="text-sm text-gray-400">Başlama: ${p.baslama}</p>
+  try {
+    const res = await fetch('/api/personel',{headers:{Authorization:'Bearer '+token}});
+    if (res.status === 401) {
+      localStorage.removeItem('token');
+      location = '/admin/login.html';
+      return;
+    }
+    if (!res.ok) {
+      const errorText = await res.text();
+      console.error('Personel listesi yükleme hatası:', res.status, errorText);
+      $('personelList').innerHTML = '<div class="bg-red-50 border border-red-200 text-red-700 p-4 rounded">Personel listesi yüklenemedi. Lütfen sayfayı yenileyin.</div>';
+      return;
+    }
+    const data = await res.json();
+    const out = $('personelList'); 
+    out.innerHTML = '';
+    if (data.length === 0) {
+      out.innerHTML = '<div class="bg-gray-50 border border-gray-200 text-gray-700 p-4 rounded">Henüz personel eklenmemiş.</div>';
+      return;
+    }
+    data.forEach(p=>{
+      const d = document.createElement('div');
+      d.className = 'bg-white p-4 shadow rounded-lg flex justify-between items-center';
+      d.innerHTML = `
+        <div class="flex items-center gap-4">
+          <img src="/uploads/${p.foto||'default.png'}" class="w-16 h-16 rounded-full object-cover" onerror="this.src='/uploads/default.png'">
+          <div>
+            <p class="font-semibold">${p.ad} ${p.soyad || ''}</p>
+            <p class="text-sm text-gray-500">Eğitim: ${p.egitim}</p>
+            <p class="text-sm text-gray-500">Unvan: ${p.gorev}</p>
+            <p class="text-sm text-gray-400">Başlama: ${p.baslama}</p>
+          </div>
         </div>
-      </div>
-      <div class="flex gap-2">
-        <button onclick='openPersonelForm("duzenle",${JSON.stringify(p)})' class="bg-yellow-500 hover:bg-yellow-600 text-white px-3 py-1 rounded">Düzenle</button>
-        <button onclick="deletePersonel(${p.id})" class="bg-red-500 hover:bg-red-600 text-white px-3 py-1 rounded">Sil</button>
-      </div>`;
-    out.appendChild(d);
-  });
+        <div class="flex gap-2">
+          <button onclick='openPersonelForm("duzenle",${JSON.stringify(p)})' class="bg-yellow-500 hover:bg-yellow-600 text-white px-3 py-1 rounded">Düzenle</button>
+          <button onclick="deletePersonel(${p.id})" class="bg-red-500 hover:bg-red-600 text-white px-3 py-1 rounded">Sil</button>
+        </div>`;
+      out.appendChild(d);
+    });
+  } catch (e) {
+    console.error('loadPersoneller hatası:', e);
+    $('personelList').innerHTML = '<div class="bg-red-50 border border-red-200 text-red-700 p-4 rounded">Bir hata oluştu: ' + e.message + '</div>';
+  }
 }
 async function savePersonel(){
   const ad = $('pAd').value.trim(),
+        soyad = $('pSoyad').value.trim(),
         eg = $('pEgitim').value.trim(),
         go = $('pGorev').value.trim(),
         ba = $('pBaslama').value;
-  if(!ad||!eg||!go||!ba) return alert('Tüm alanları doldurun.');
+  if(!ad||!soyad||!eg||!go||!ba) return alert('Tüm alanları doldurun.');
   const fd = new FormData();
   fd.append('ad',ad);
+  fd.append('soyad',soyad);
   fd.append('egitim',eg);
   fd.append('gorev',go);
   fd.append('baslama',ba);
@@ -426,7 +486,10 @@ async function savePersonel(){
     headers:{Authorization:'Bearer '+token},
     body: fd
   });
-  if(!res.ok) return alert('Personel kaydedilemedi.');
+  if(!res.ok) {
+    const err = await res.json().catch(()=>({message:'Personel kaydedilemedi.'}));
+    return alert(err.message || 'Personel kaydedilemedi.');
+  }
   resetPersonelForm();
   loadPersoneller();
   loadStats();

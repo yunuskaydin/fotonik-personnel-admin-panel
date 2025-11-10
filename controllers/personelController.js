@@ -73,6 +73,7 @@ exports.update = (req, res) => {
   list[ix] = {
     ...p,
     ad:      req.body.ad      ?? p.ad,
+    soyad:   req.body.soyad   ?? p.soyad,
     egitim:  req.body.egitim  ?? p.egitim,
     gorev:   req.body.gorev   ?? p.gorev,
     baslama: req.body.baslama ?? p.baslama,

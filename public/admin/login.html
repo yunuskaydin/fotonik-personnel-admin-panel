@@ -114,9 +114,10 @@
       if (res.ok) {
         const { token } = await res.json();
         localStorage.setItem('token', token);
-        window.location.href = '/admin';
+        window.location.href = '/admin/index.html';
       } else {
-        alert('Kullanıcı adı veya şifre hatalı.');
+        const err = await res.json().catch(() => ({ message: 'Kullanıcı adı veya şifre hatalı.' }));
+        alert(err.message || 'Kullanıcı adı veya şifre hatalı.');
       }
     });
   </script>
