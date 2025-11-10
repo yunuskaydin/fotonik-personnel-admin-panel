@@ -17,11 +17,14 @@ app.use('/api/duyurular', require('./routes/duyuru'));
 app.use('/api/ozluk', require('./routes/ozluk'));
 app.use('/api/izin', require('./routes/izin'));
 app.use("/api/uretim", uretim);
-app.use('/api/iletisim', require('./routes/iletisim')); app.use(express.static('public')); 
+app.use('/api/iletisim', require('./routes/iletisim')); 
 
 
 app.get('/', (req, res) => res.redirect('/admin/login.html'))
 app.get('/admin', (req, res) => res.redirect('/admin/index.html'))
 app.get('/personel', (req, res) => res.redirect('/personel/login.html'))
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, '0.0.0.0', () => console.log(`halloldu: http://localhost:${PORT}`));
+// Elastic Beanstalk automatically sets PORT environment variable (default: 8080)
+const PORT = process.env.PORT || 8080;
+app.listen(PORT, '0.0.0.0', () => {
+  console.log(`Server running on port ${PORT}`);
+});
